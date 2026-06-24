@@ -54,7 +54,13 @@ async function getSheetsClient() {
   if (sheetsClient) return sheetsClient;
 
   let auth;
-  if (process.env.GOOGLE_SERVICE_ACCOUNT_KEY_FILE) {
+  if (process.env.GOOGLE_SERVICE_ACCOUNT_JSON) {
+    const credentials = JSON.parse(process.env.GOOGLE_SERVICE_ACCOUNT_JSON);
+    auth = new google.auth.GoogleAuth({
+      credentials,
+      scopes: ['https://www.googleapis.com/auth/spreadsheets'],
+    });
+  } else if (process.env.GOOGLE_SERVICE_ACCOUNT_KEY_FILE) {
     auth = new google.auth.GoogleAuth({
       keyFile: process.env.GOOGLE_SERVICE_ACCOUNT_KEY_FILE,
       scopes: ['https://www.googleapis.com/auth/spreadsheets'],
