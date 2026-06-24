@@ -155,13 +155,14 @@
       try {
         const res = await fetch('/api/token');
         const data = await res.json();
+        const checkinUrl = `${window.location.origin}/checkin?token=${data.token}`;
 
         if (qrCode) {
           qrCode.clear();
-          qrCode.makeCode(data.checkinUrl);
+          qrCode.makeCode(checkinUrl);
         } else {
           qrCode = new QRCode(qrContainer, {
-            text: data.checkinUrl,
+            text: checkinUrl,
             width: 300,
             height: 300,
             colorDark: '#1e3a5f',
