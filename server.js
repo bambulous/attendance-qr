@@ -9,11 +9,17 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 const BASE_URL = process.env.BASE_URL || `http://localhost:${PORT}`;
 
+app.set('trust proxy', 1);
+
 app.use(session({
   secret: process.env.SESSION_SECRET || crypto.randomBytes(32).toString('hex'),
   resave: false,
   saveUninitialized: false,
-  cookie: { maxAge: 24 * 60 * 60 * 1000 }
+  cookie: {
+    maxAge: 24 * 60 * 60 * 1000,
+    secure: BASE_URL.startsWith('https'),
+    sameSite: 'lax'
+  }
 }));
 
 app.use(express.static(path.join(__dirname, 'public')));
@@ -240,7 +246,7 @@ function renderResultPage(user) {
 
 // --------------- Start Server ---------------
 
-app.listen(PORT, () => {
+app.listen(PORT, '0.0.0.0', () => {
   console.log(`Attendance server running at ${BASE_URL}`);
   console.log(`  Teacher view: ${BASE_URL}/teacher.html`);
   console.log(`  Student view: ${BASE_URL}/student.html`);
