@@ -1,0 +1,110 @@
+# QR Code Attendance System
+
+ระบบเช็คชื่อเข้าเรียนผ่าน QR Code ด้วย Google OAuth + Google Sheets
+
+## Features
+
+- **Teacher View** — แสดง QR Code ที่ reset token อัตโนมัติทุก 30 วินาที
+- **Student View** — scan QR แล้ว login ด้วย Google เพื่อยืนยันตัวตน
+- **Google Sheets** — บันทึกข้อมูลการเช็คชื่อลง Google Sheets อัตโนมัติ
+
+## Prerequisites
+
+- Node.js 18+
+- Google Cloud Project ที่ enable APIs แล้ว
+
+## Setup
+
+### 1. Install dependencies
+
+```bash
+cd attendance-qr
+npm install
+```
+
+### 2. Setup Google Cloud Project
+
+ไปที่ [Google Cloud Console](https://console.cloud.google.com/):
+
+#### 2a. สร้าง OAuth 2.0 Credentials (สำหรับ student login)
+
+1. ไปที่ **APIs & Services > Credentials**
+2. กด **Create Credentials > OAuth client ID**
+3. เลือก **Web application**
+4. ตั้ง **Authorized redirect URIs**: `http://localhost:3000/auth/google/callback`
+5. Copy **Client ID** และ **Client Secret**
+
+#### 2b. สร้าง Service Account (สำหรับเขียน Google Sheets)
+
+1. ไปที่ **APIs & Services > Credentials**
+2. กด **Create Credentials > Service account**
+3. สร้างเสร็จแล้ว เข้าไปที่ Service Account > **Keys** > **Add Key** > **Create new key** > JSON
+4. Download file JSON แล้วบันทึกเป็น `service-account-key.json` ใน project folder
+
+#### 2c. Enable APIs
+
+ไปที่ **APIs & Services > Library** แล้ว enable:
+- **Google Sheets API**
+- **Google People API** (หรือ Google+ API)
+
+### 3. สร้าง Google Sheet
+
+1. สร้าง Google Sheet ใหม่
+2. ใส่ header row: `Date | Time | Name | Email | Status`
+3. **Share** sheet กับ email ของ Service Account (อยู่ใน file JSON ที่ download มา, field `client_email`)
+4. ให้สิทธิ์ **Editor**
+5. Copy **Sheet ID** จาก URL: `https://docs.google.com/spreadsheets/d/{SHEET_ID}/edit`
+
+### 4. สร้างไฟล์ .env
+
+```bash
+copy .env.example .env
+```
+
+แก้ไขค่าในไฟล์ `.env`:
+
+```env
+PORT=3000
+BASE_URL=http://localhost:3000
+SESSION_SECRET=random-string-here
+
+GOOGLE_CLIENT_ID=xxx.apps.googleusercontent.com
+GOOGLE_CLIENT_SECRET=GOCSPX-xxx
+
+GOOGLE_SERVICE_ACCOUNT_KEY_FILE=./service-account-key.json
+GOOGLE_SHEET_ID=1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgVE2upms
+```
+
+### 5. Start server
+
+```bash
+npm start
+```
+
+## Usage
+
+| Page | URL | Description |
+|------|-----|-------------|
+| Teacher | `http://localhost:3000/teacher.html` | แสดง QR Code ให้นักเรียน scan |
+| Student | `http://localhost:3000/student.html` | เปิด QR Scanner ในเว็บ (optional) |
+
+### Flow
+
+1. อาจารย์เปิด Teacher View บนจอโปรเจคเตอร์
+2. นักเรียนใช้กล้องมือถือ scan QR Code (หรือเปิด Student View)
+3. ระบบ redirect ไปยัง Google Login
+4. หลัง login สำเร็จ ระบบบันทึกชื่อลง Google Sheets
+
+### Google Sheet Output
+
+| Date | Time | Name | Email | Status |
+|------|------|------|-------|--------|
+| 24/6/2569 | 13:45:30 | สมชาย ใจดี | somchai@gmail.com | Present |
+
+## Tech Stack
+
+- **Backend**: Node.js, Express, express-session
+- **Auth**: Google OAuth 2.0
+- **Storage**: Google Sheets API (via service account)
+- **QR Code**: [qrcode.js](https://github.com/soldair/node-qrcode) (CDN)
+- **QR Scanner**: [html5-qrcode](https://github.com/mebjas/html5-qrcode) (CDN)

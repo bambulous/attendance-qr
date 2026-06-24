@@ -1,0 +1,191 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Student - QR Attendance</title>
+  <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: 'Segoe UI', Tahoma, sans-serif;
+      background: #f0f2f5;
+      min-height: 100vh;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      padding: 20px;
+    }
+    .container {
+      background: white;
+      border-radius: 24px;
+      padding: 32px;
+      text-align: center;
+      box-shadow: 0 4px 24px rgba(0,0,0,0.1);
+      max-width: 440px;
+      width: 100%;
+    }
+    h1 {
+      font-size: 1.5rem;
+      color: #1e3a5f;
+      margin-bottom: 8px;
+    }
+    .subtitle {
+      color: #888;
+      margin-bottom: 24px;
+      font-size: 0.9rem;
+    }
+    #reader {
+      border-radius: 12px;
+      overflow: hidden;
+      margin-bottom: 16px;
+    }
+    .btn {
+      display: inline-block;
+      padding: 14px 32px;
+      border: none;
+      border-radius: 12px;
+      font-size: 1rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.2s;
+      width: 100%;
+    }
+    .btn-primary {
+      background: #3b82f6;
+      color: white;
+    }
+    .btn-primary:hover { background: #2563eb; }
+    .btn-stop {
+      background: #ef4444;
+      color: white;
+    }
+    .btn-stop:hover { background: #dc2626; }
+    .hidden { display: none; }
+    .instructions {
+      margin: 20px 0;
+      text-align: left;
+      background: #f9fafb;
+      border-radius: 12px;
+      padding: 20px;
+    }
+    .instructions h3 {
+      color: #1e3a5f;
+      font-size: 0.95rem;
+      margin-bottom: 12px;
+    }
+    .instructions ol {
+      padding-left: 20px;
+      color: #555;
+      font-size: 0.9rem;
+      line-height: 1.8;
+    }
+    .status-msg {
+      margin-top: 16px;
+      padding: 12px;
+      border-radius: 8px;
+      font-size: 0.9rem;
+    }
+    .status-msg.info { background: #eff6ff; color: #1d4ed8; }
+    .status-msg.success { background: #f0fdf4; color: #16a34a; }
+    .status-msg.error { background: #fef2f2; color: #dc2626; }
+    .or-divider {
+      display: flex;
+      align-items: center;
+      margin: 24px 0;
+      color: #aaa;
+      font-size: 0.85rem;
+    }
+    .or-divider::before, .or-divider::after {
+      content: '';
+      flex: 1;
+      border-bottom: 1px solid #e5e7eb;
+    }
+    .or-divider span { padding: 0 12px; }
+    .camera-tip {
+      color: #888;
+      font-size: 0.85rem;
+      margin-top: 8px;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>Scan QR to Check In</h1>
+    <p class="subtitle">Scan the QR code displayed by your teacher</p>
+
+    <div class="instructions">
+      <h3>How to check in:</h3>
+      <ol>
+        <li>Point your camera at the QR code on the screen</li>
+        <li>Sign in with your Google account</li>
+        <li>Your attendance will be recorded automatically</li>
+      </ol>
+    </div>
+
+    <button class="btn btn-primary" id="btn-start" onclick="startScanner()">
+      Open QR Scanner
+    </button>
+    <button class="btn btn-stop hidden" id="btn-stop" onclick="stopScanner()">
+      Close Scanner
+    </button>
+
+    <div id="reader" class="hidden"></div>
+
+    <p class="camera-tip hidden" id="camera-tip">
+      You can also use your phone's built-in camera app to scan the QR code directly.
+    </p>
+
+    <div id="status" class="hidden"></div>
+  </div>
+
+  <script>
+    let html5QrCode = null;
+
+    function showStatus(message, type) {
+      const el = document.getElementById('status');
+      el.textContent = message;
+      el.className = `status-msg ${type}`;
+      el.classList.remove('hidden');
+    }
+
+    function onScanSuccess(decodedText) {
+      stopScanner();
+      showStatus('QR code scanned! Redirecting to login...', 'success');
+      window.location.href = decodedText;
+    }
+
+    async function startScanner() {
+      document.getElementById('btn-start').classList.add('hidden');
+      document.getElementById('btn-stop').classList.remove('hidden');
+      document.getElementById('reader').classList.remove('hidden');
+      document.getElementById('camera-tip').classList.remove('hidden');
+      document.getElementById('status').classList.add('hidden');
+
+      html5QrCode = new Html5Qrcode('reader');
+
+      try {
+        await html5QrCode.start(
+          { facingMode: 'environment' },
+          { fps: 10, qrbox: { width: 250, height: 250 } },
+          onScanSuccess
+        );
+      } catch (err) {
+        showStatus('Cannot access camera. Please allow camera permission or use your phone camera app instead.', 'error');
+        document.getElementById('btn-start').classList.remove('hidden');
+        document.getElementById('btn-stop').classList.add('hidden');
+      }
+    }
+
+    async function stopScanner() {
+      if (html5QrCode && html5QrCode.isScanning) {
+        await html5QrCode.stop();
+      }
+      document.getElementById('reader').classList.add('hidden');
+      document.getElementById('camera-tip').classList.add('hidden');
+      document.getElementById('btn-start').classList.remove('hidden');
+      document.getElementById('btn-stop').classList.add('hidden');
+    }
+  </script>
+</body>
+</html>

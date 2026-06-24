@@ -1,0 +1,186 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Teacher - QR Attendance</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: 'Segoe UI', Tahoma, sans-serif;
+      background: linear-gradient(135deg, #1e3a5f 0%, #2d5a87 100%);
+      min-height: 100vh;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      padding: 20px;
+    }
+    .container {
+      background: white;
+      border-radius: 24px;
+      padding: 48px;
+      text-align: center;
+      box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+      max-width: 500px;
+      width: 100%;
+    }
+    h1 {
+      font-size: 1.8rem;
+      color: #1e3a5f;
+      margin-bottom: 8px;
+    }
+    .subtitle {
+      color: #888;
+      margin-bottom: 32px;
+      font-size: 0.95rem;
+    }
+    #qr-container img {
+      display: block;
+      margin: 0 auto;
+    }
+    .timer-section {
+      margin-top: 24px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 12px;
+    }
+    .timer-ring {
+      position: relative;
+      width: 56px;
+      height: 56px;
+    }
+    .timer-ring svg {
+      transform: rotate(-90deg);
+    }
+    .timer-ring circle {
+      fill: none;
+      stroke-width: 4;
+    }
+    .timer-ring .bg { stroke: #e5e7eb; }
+    .timer-ring .progress {
+      stroke: #3b82f6;
+      stroke-linecap: round;
+      transition: stroke-dashoffset 1s linear, stroke 0.3s;
+    }
+    .timer-ring .progress.warning { stroke: #f59e0b; }
+    .timer-ring .progress.danger { stroke: #ef4444; }
+    .timer-text {
+      position: absolute;
+      top: 50%; left: 50%;
+      transform: translate(-50%, -50%);
+      font-size: 1.1rem;
+      font-weight: 700;
+      color: #1e3a5f;
+    }
+    .timer-label {
+      font-size: 1rem;
+      color: #666;
+    }
+    .status {
+      margin-top: 20px;
+      padding: 8px 16px;
+      background: #f0f9ff;
+      border-radius: 8px;
+      color: #1e3a5f;
+      font-size: 0.9rem;
+    }
+    .status.error {
+      background: #fef2f2;
+      color: #dc2626;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>QR Code Attendance</h1>
+    <p class="subtitle">Students: scan QR code with your phone camera</p>
+
+    <div id="qr-container" style="display:inline-block;border-radius:12px;overflow:hidden;"></div>
+
+    <div class="timer-section">
+      <div class="timer-ring">
+        <svg width="56" height="56">
+          <circle class="bg" cx="28" cy="28" r="24"></circle>
+          <circle class="progress" id="progress-ring" cx="28" cy="28" r="24"
+                  stroke-dasharray="150.8" stroke-dashoffset="0"></circle>
+        </svg>
+        <span class="timer-text" id="timer-text">30</span>
+      </div>
+      <span class="timer-label">seconds until new QR</span>
+    </div>
+
+    <div class="status" id="status">Loading...</div>
+  </div>
+
+  <script>
+    const qrContainer = document.getElementById('qr-container');
+    const timerText = document.getElementById('timer-text');
+    const progressRing = document.getElementById('progress-ring');
+    const statusEl = document.getElementById('status');
+    const circumference = 2 * Math.PI * 24;
+
+    let currentRemaining = 30;
+    let countdownInterval = null;
+    let qrCode = null;
+
+    function updateRing(seconds) {
+      const offset = circumference * (1 - seconds / 30);
+      progressRing.style.strokeDashoffset = offset;
+      progressRing.classList.remove('warning', 'danger');
+      if (seconds <= 5) progressRing.classList.add('danger');
+      else if (seconds <= 10) progressRing.classList.add('warning');
+    }
+
+    function startCountdown(seconds) {
+      clearInterval(countdownInterval);
+      currentRemaining = seconds;
+      timerText.textContent = currentRemaining;
+      updateRing(currentRemaining);
+
+      countdownInterval = setInterval(() => {
+        currentRemaining--;
+        if (currentRemaining <= 0) {
+          clearInterval(countdownInterval);
+          fetchToken();
+          return;
+        }
+        timerText.textContent = currentRemaining;
+        updateRing(currentRemaining);
+      }, 1000);
+    }
+
+    async function fetchToken() {
+      try {
+        const res = await fetch('/api/token');
+        const data = await res.json();
+
+        if (qrCode) {
+          qrCode.clear();
+          qrCode.makeCode(data.checkinUrl);
+        } else {
+          qrCode = new QRCode(qrContainer, {
+            text: data.checkinUrl,
+            width: 300,
+            height: 300,
+            colorDark: '#1e3a5f',
+            colorLight: '#ffffff',
+            correctLevel: QRCode.CorrectLevel.H
+          });
+        }
+
+        statusEl.textContent = 'QR Code is active';
+        statusEl.classList.remove('error');
+        startCountdown(data.remainingSeconds);
+      } catch (err) {
+        statusEl.textContent = 'Error: ' + err.message;
+        statusEl.classList.add('error');
+        setTimeout(fetchToken, 3000);
+      }
+    }
+
+    fetchToken();
+  </script>
+</body>
+</html>
