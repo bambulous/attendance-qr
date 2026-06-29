@@ -24,6 +24,7 @@ app.use(session({
 
 app.use(express.static(path.join(__dirname, 'public')));
 app.use(express.json());
+app.use(express.urlencoded({ extended: false }));
 
 // --------------- Token Management ---------------
 
@@ -87,10 +88,10 @@ async function recordAttendance(user) {
 
   await sheets.spreadsheets.values.append({
     spreadsheetId: process.env.GOOGLE_SHEET_ID,
-    range: 'Sheet1!A:E',
+    range: 'Sheet1!A:F',
     valueInputOption: 'USER_ENTERED',
     requestBody: {
-      values: [[dateStr, timeStr, user.name, user.email, 'Present']]
+      values: [[dateStr, timeStr, user.fullName, user.studentId, user.email, 'Present']]
     }
   });
 }
@@ -116,7 +117,7 @@ app.get('/checkin', (req, res) => {
   req.session.pendingToken = token;
 
   if (req.session.user) {
-    return processCheckin(req, res);
+    return res.redirect('/profile');
   }
 
   const client = createOAuth2Client();
@@ -148,11 +149,36 @@ app.get('/auth/google/callback', async (req, res) => {
       picture: data.picture
     };
 
-    return processCheckin(req, res);
+    return res.redirect('/profile');
   } catch (err) {
     console.error('OAuth error:', err.message);
     res.status(500).send(renderPage('Authentication Failed', 'Please try again.', 'red'));
   }
+});
+
+app.get('/profile', (req, res) => {
+  if (!req.session.user || !req.session.pendingToken) {
+    return res.redirect('/student.html');
+  }
+  res.send(renderProfilePage(req.session.user));
+});
+
+app.post('/profile', async (req, res) => {
+  if (!req.session.user) {
+    return res.status(401).send(renderPage('Session Expired', 'กรุณาสแกน QR code ใหม่อีกครั้ง', 'red'));
+  }
+
+  const fullName = (req.body.fullName || '').trim();
+  const studentId = (req.body.studentId || '').trim();
+
+  if (!fullName || !studentId) {
+    return res.send(renderProfilePage(req.session.user, 'กรุณากรอกข้อมูลให้ครบถ้วน'));
+  }
+
+  req.session.user.fullName = fullName;
+  req.session.user.studentId = studentId;
+
+  return processCheckin(req, res);
 });
 
 app.get('/logout', (req, res) => {
@@ -222,29 +248,83 @@ function renderResultPage(user) {
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Check-in Success</title>
+  <title>บันทึกการเข้าเรียนสำเร็จ</title>
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
     body { font-family: 'Segoe UI', Tahoma, sans-serif; display: flex; justify-content: center;
            align-items: center; min-height: 100vh; background: #f0f2f5; padding: 20px; }
     .card { background: white; border-radius: 16px; padding: 48px; text-align: center;
             box-shadow: 0 4px 24px rgba(0,0,0,0.1); max-width: 420px; width: 100%; }
-    .check { font-size: 64px; margin-bottom: 16px; }
+    .check { font-size: 64px; margin-bottom: 16px; color: #22c55e; }
     h1 { color: #22c55e; font-size: 1.5rem; margin-bottom: 20px; }
     .info { text-align: left; background: #f9fafb; border-radius: 8px; padding: 16px; margin: 16px 0; }
     .info div { padding: 6px 0; color: #333; font-size: 0.95rem; }
-    .label { color: #888; font-size: 0.85rem; }
+    .label { color: #888; font-size: 0.85rem; display: block; margin-bottom: 2px; }
   </style>
 </head>
 <body>
   <div class="card">
-    <div class="check">&#10003;</div>
-    <h1>Check-in Successful!</h1>
+    <div class="check">✓</div>
+    <h1>บันทึกการเข้าเรียนสำเร็จ!</h1>
     <div class="info">
-      <div><span class="label">Name:</span> ${user.name}</div>
-      <div><span class="label">Email:</span> ${user.email}</div>
-      <div><span class="label">Time:</span> ${timeStr}</div>
+      <div><span class="label">ชื่อ-นามสกุล</span>${user.fullName}</div>
+      <div><span class="label">รหัสนักศึกษา</span>${user.studentId}</div>
+      <div><span class="label">อีเมล</span>${user.email}</div>
+      <div><span class="label">เวลา</span>${timeStr}</div>
     </div>
+  </div>
+</body>
+</html>`;
+}
+
+function renderProfilePage(user, errorMsg) {
+  return `<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>กรอกข้อมูลนักศึกษา</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: 'Segoe UI', Tahoma, sans-serif; display: flex; justify-content: center;
+           align-items: center; min-height: 100vh; background: #f0f2f5; padding: 20px; }
+    .card { background: white; border-radius: 16px; padding: 40px; text-align: center;
+            box-shadow: 0 4px 24px rgba(0,0,0,0.1); max-width: 440px; width: 100%; }
+    .avatar { width: 64px; height: 64px; border-radius: 50%; margin: 0 auto 12px; display: block;
+              object-fit: cover; }
+    h1 { color: #1e3a5f; font-size: 1.4rem; margin-bottom: 4px; }
+    .google-email { color: #888; font-size: 0.85rem; margin-bottom: 28px; }
+    label { display: block; text-align: left; font-size: 0.9rem; color: #555;
+            margin-bottom: 6px; font-weight: 600; }
+    input { width: 100%; padding: 12px 16px; border: 1.5px solid #e5e7eb; border-radius: 10px;
+            font-size: 1rem; outline: none; transition: border-color 0.2s; margin-bottom: 20px;
+            font-family: inherit; }
+    input:focus { border-color: #3b82f6; }
+    .btn { width: 100%; padding: 14px; background: #3b82f6; color: white; border: none;
+           border-radius: 10px; font-size: 1rem; font-weight: 600; cursor: pointer;
+           transition: background 0.2s; font-family: inherit; }
+    .btn:hover { background: #2563eb; }
+    .error-banner { background: #fef2f2; color: #dc2626; border-radius: 8px;
+                    padding: 10px 14px; margin-bottom: 20px; font-size: 0.9rem; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <img src="${user.picture || ''}" alt="" class="avatar" onerror="this.style.display='none'">
+    <h1>กรอกข้อมูลนักศึกษา</h1>
+    <p class="google-email">เข้าสู่ระบบด้วย ${user.email}</p>
+
+    ${errorMsg ? `<div class="error-banner">${errorMsg}</div>` : ''}
+
+    <form method="POST" action="/profile">
+      <label for="fullName">ชื่อ-นามสกุล</label>
+      <input type="text" id="fullName" name="fullName" placeholder="เช่น สมชาย ใจดี" required autocomplete="name">
+
+      <label for="studentId">รหัสนักศึกษา</label>
+      <input type="text" id="studentId" name="studentId" placeholder="เช่น 65xxxxxxx" required autocomplete="off">
+
+      <button type="submit" class="btn">บันทึกการเข้าเรียน</button>
+    </form>
   </div>
 </body>
 </html>`;
