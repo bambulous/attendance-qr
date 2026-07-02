@@ -37,7 +37,7 @@ function rotateToken() {
 }
 
 rotateToken();
-setInterval(rotateToken, 30000);
+setInterval(rotateToken, 60000);
 
 // --------------- Google APIs ---------------
 
@@ -100,7 +100,7 @@ async function recordAttendance(user) {
 
 app.get('/api/token', (req, res) => {
   const elapsed = Math.floor((Date.now() - tokenCreatedAt) / 1000);
-  const remaining = Math.max(0, 30 - elapsed);
+  const remaining = Math.max(0, 60 - elapsed);
   res.json({
     token: currentToken,
     remainingSeconds: remaining,
