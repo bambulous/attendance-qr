@@ -370,7 +370,7 @@ function renderProfilePage(user, errorMsg, form) {
 
       <label for="fullName">ชื่อ-นามสกุล (ภาษาไทย)</label>
       <input type="text" id="fullName" name="fullName" placeholder="เช่น สมชาย ใจดี" required autocomplete="name"
-             lang="th" pattern="[\u0E00-\u0E7F]+(\s+[\u0E00-\u0E7F]+)+"
+             lang="th" pattern="[\\u0E00-\\u0E7F]+(\\s+[\\u0E00-\\u0E7F]+)+"
              title="กรุณากรอกชื่อ-นามสกุลเป็นภาษาไทย โดยเว้นวรรคระหว่างชื่อและนามสกุล"
              value="${escapeHtml(values.fullName)}">
 
