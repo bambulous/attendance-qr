@@ -28,6 +28,18 @@ app.use(express.urlencoded({ extended: false }));
 
 // --------------- Token Management ---------------
 
+const TOKEN_TTL_SECONDS = 120;
+
+const SECTIONS = [
+  'Sec 1 สนทนาภาษาอังกฤษเพื่องานบริการ',
+  'Sec 9 Gen Eng',
+  'Sec 10 Gen Eng',
+  'Sec 14 Gen Eng',
+  'Sec 20 Gen Eng'
+];
+
+const THAI_NAME_PATTERN = /^[\u0E00-\u0E7F]+(?:\s+[\u0E00-\u0E7F]+)+$/;
+
 let currentToken = null;
 let tokenCreatedAt = null;
 
@@ -37,7 +49,7 @@ function rotateToken() {
 }
 
 rotateToken();
-setInterval(rotateToken, 60000);
+setInterval(rotateToken, TOKEN_TTL_SECONDS * 1000);
 
 // --------------- Google APIs ---------------
 
@@ -88,10 +100,10 @@ async function recordAttendance(user) {
 
   await sheets.spreadsheets.values.append({
     spreadsheetId: process.env.GOOGLE_SHEET_ID,
-    range: 'Sheet1!A:F',
+    range: 'Sheet1!A:G',
     valueInputOption: 'USER_ENTERED',
     requestBody: {
-      values: [[dateStr, timeStr, user.fullName, user.studentId, user.email, 'Present']]
+      values: [[dateStr, timeStr, user.fullName, user.studentId, user.email, 'Present', user.section]]
     }
   });
 }
@@ -100,10 +112,11 @@ async function recordAttendance(user) {
 
 app.get('/api/token', (req, res) => {
   const elapsed = Math.floor((Date.now() - tokenCreatedAt) / 1000);
-  const remaining = Math.max(0, 60 - elapsed);
+  const remaining = Math.max(0, TOKEN_TTL_SECONDS - elapsed);
   res.json({
     token: currentToken,
     remainingSeconds: remaining,
+    ttlSeconds: TOKEN_TTL_SECONDS,
     checkinUrl: `${BASE_URL}/checkin?token=${currentToken}`
   });
 });
@@ -168,15 +181,24 @@ app.post('/profile', async (req, res) => {
     return res.status(401).send(renderPage('Session Expired', 'กรุณาสแกน QR code ใหม่อีกครั้ง', 'red'));
   }
 
-  const fullName = (req.body.fullName || '').trim();
+  const section = (req.body.section || '').trim();
   const studentId = (req.body.studentId || '').trim();
+  const fullName = (req.body.fullName || '').trim().replace(/\s+/g, ' ');
+  const form = { section, studentId, fullName };
 
-  if (!fullName || !studentId) {
-    return res.send(renderProfilePage(req.session.user, 'กรุณากรอกข้อมูลให้ครบถ้วน'));
+  if (!section || !studentId || !fullName) {
+    return res.send(renderProfilePage(req.session.user, 'กรุณากรอกข้อมูลให้ครบถ้วน', form));
+  }
+  if (!SECTIONS.includes(section)) {
+    return res.send(renderProfilePage(req.session.user, 'กรุณาเลือกกลุ่มเรียนจากรายการ', form));
+  }
+  if (!THAI_NAME_PATTERN.test(fullName)) {
+    return res.send(renderProfilePage(req.session.user, 'กรุณากรอกชื่อ-นามสกุลเป็นภาษาไทย โดยเว้นวรรคระหว่างชื่อและนามสกุล', form));
   }
 
-  req.session.user.fullName = fullName;
+  req.session.user.section = section;
   req.session.user.studentId = studentId;
+  req.session.user.fullName = fullName;
 
   return processCheckin(req, res);
 });
@@ -213,6 +235,15 @@ async function processCheckin(req, res) {
 }
 
 // --------------- HTML Helpers ---------------
+
+function escapeHtml(value) {
+  return String(value == null ? '' : value)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
 
 function renderPage(title, message, color) {
   return `<!DOCTYPE html>
@@ -267,9 +298,10 @@ function renderResultPage(user) {
     <div class="check">✓</div>
     <h1>บันทึกการเข้าเรียนสำเร็จ!</h1>
     <div class="info">
-      <div><span class="label">ชื่อ-นามสกุล</span>${user.fullName}</div>
-      <div><span class="label">รหัสนักศึกษา</span>${user.studentId}</div>
-      <div><span class="label">อีเมล</span>${user.email}</div>
+      <div><span class="label">กลุ่มเรียน</span>${escapeHtml(user.section)}</div>
+      <div><span class="label">รหัสนักศึกษา</span>${escapeHtml(user.studentId)}</div>
+      <div><span class="label">ชื่อ-นามสกุล</span>${escapeHtml(user.fullName)}</div>
+      <div><span class="label">อีเมล</span>${escapeHtml(user.email)}</div>
       <div><span class="label">เวลา</span>${timeStr}</div>
     </div>
   </div>
@@ -277,7 +309,15 @@ function renderResultPage(user) {
 </html>`;
 }
 
-function renderProfilePage(user, errorMsg) {
+function renderProfilePage(user, errorMsg, form) {
+  const values = form || {
+    section: user.section || '',
+    studentId: user.studentId || '',
+    fullName: user.fullName || ''
+  };
+  const sectionOptions = SECTIONS.map(s =>
+    `<option value="${escapeHtml(s)}"${s === values.section ? ' selected' : ''}>${escapeHtml(s)}</option>`
+  ).join('');
   return `<!DOCTYPE html>
 <html lang="th">
 <head>
@@ -296,10 +336,11 @@ function renderProfilePage(user, errorMsg) {
     .google-email { color: #888; font-size: 0.85rem; margin-bottom: 28px; }
     label { display: block; text-align: left; font-size: 0.9rem; color: #555;
             margin-bottom: 6px; font-weight: 600; }
-    input { width: 100%; padding: 12px 16px; border: 1.5px solid #e5e7eb; border-radius: 10px;
+    input, select { width: 100%; padding: 12px 16px; border: 1.5px solid #e5e7eb; border-radius: 10px;
             font-size: 1rem; outline: none; transition: border-color 0.2s; margin-bottom: 20px;
             font-family: inherit; }
-    input:focus { border-color: #3b82f6; }
+    select { background: white; appearance: auto; }
+    input:focus, select:focus { border-color: #3b82f6; }
     .btn { width: 100%; padding: 14px; background: #3b82f6; color: white; border: none;
            border-radius: 10px; font-size: 1rem; font-weight: 600; cursor: pointer;
            transition: background 0.2s; font-family: inherit; }
@@ -310,18 +351,28 @@ function renderProfilePage(user, errorMsg) {
 </head>
 <body>
   <div class="card">
-    <img src="${user.picture || ''}" alt="" class="avatar" onerror="this.style.display='none'">
+    <img src="${escapeHtml(user.picture)}" alt="" class="avatar" onerror="this.style.display='none'">
     <h1>กรอกข้อมูลนักศึกษา</h1>
-    <p class="google-email">เข้าสู่ระบบด้วย ${user.email}</p>
+    <p class="google-email">เข้าสู่ระบบด้วย ${escapeHtml(user.email)}</p>
 
     ${errorMsg ? `<div class="error-banner">${errorMsg}</div>` : ''}
 
     <form method="POST" action="/profile">
-      <label for="fullName">ชื่อ-นามสกุล</label>
-      <input type="text" id="fullName" name="fullName" placeholder="เช่น สมชาย ใจดี" required autocomplete="name">
+      <label for="section">กลุ่มเรียน</label>
+      <select id="section" name="section" required>
+        <option value=""${values.section ? '' : ' selected'} disabled>-- เลือกกลุ่มเรียน --</option>
+        ${sectionOptions}
+      </select>
 
       <label for="studentId">รหัสนักศึกษา</label>
-      <input type="text" id="studentId" name="studentId" placeholder="เช่น 65xxxxxxx" required autocomplete="off">
+      <input type="text" id="studentId" name="studentId" placeholder="เช่น 65xxxxxxx" required autocomplete="off"
+             inputmode="numeric" value="${escapeHtml(values.studentId)}">
+
+      <label for="fullName">ชื่อ-นามสกุล (ภาษาไทย)</label>
+      <input type="text" id="fullName" name="fullName" placeholder="เช่น สมชาย ใจดี" required autocomplete="name"
+             lang="th" pattern="[\u0E00-\u0E7F]+(\s+[\u0E00-\u0E7F]+)+"
+             title="กรุณากรอกชื่อ-นามสกุลเป็นภาษาไทย โดยเว้นวรรคระหว่างชื่อและนามสกุล"
+             value="${escapeHtml(values.fullName)}">
 
       <button type="submit" class="btn">บันทึกการเข้าเรียน</button>
     </form>

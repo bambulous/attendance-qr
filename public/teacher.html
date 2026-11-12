@@ -106,7 +106,7 @@
           <circle class="progress" id="progress-ring" cx="28" cy="28" r="24"
                   stroke-dasharray="150.8" stroke-dashoffset="0"></circle>
         </svg>
-        <span class="timer-text" id="timer-text">30</span>
+        <span class="timer-text" id="timer-text">120</span>
       </div>
       <span class="timer-label">seconds until new QR</span>
     </div>
@@ -121,16 +121,17 @@
     const statusEl = document.getElementById('status');
     const circumference = 2 * Math.PI * 24;
 
-    let currentRemaining = 30;
+    let totalSeconds = 120;
+    let currentRemaining = totalSeconds;
     let countdownInterval = null;
     let qrCode = null;
 
     function updateRing(seconds) {
-      const offset = circumference * (1 - seconds / 30);
+      const offset = circumference * (1 - seconds / totalSeconds);
       progressRing.style.strokeDashoffset = offset;
       progressRing.classList.remove('warning', 'danger');
-      if (seconds <= 5) progressRing.classList.add('danger');
-      else if (seconds <= 10) progressRing.classList.add('warning');
+      if (seconds <= 10) progressRing.classList.add('danger');
+      else if (seconds <= 30) progressRing.classList.add('warning');
     }
 
     function startCountdown(seconds) {
@@ -155,6 +156,7 @@
       try {
         const res = await fetch('/api/token');
         const data = await res.json();
+        if (data.ttlSeconds) totalSeconds = data.ttlSeconds;
         const checkinUrl = `${window.location.origin}/checkin?token=${data.token}`;
 
         if (qrCode) {
