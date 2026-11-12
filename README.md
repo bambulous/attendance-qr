@@ -108,3 +108,27 @@ npm start
 - **Storage**: Google Sheets API (via service account)
 - **QR Code**: [qrcode.js](https://github.com/soldair/node-qrcode) (CDN)
 - **QR Scanner**: [html5-qrcode](https://github.com/mebjas/html5-qrcode) (CDN)
+
+## Attendance Dashboard
+
+| Page | URL | Access |
+|------|-----|--------|
+| Student dashboard | `/my` (or `/`) | Student ID + `STUDENT_PASSWORD`, only when `student_dashboard` = `on` |
+| Teacher dashboard | `/teacher` (small lock icon) | `TEACHER_PASSWORD` |
+
+Set `TEACHER_PASSWORD` and `STUDENT_PASSWORD` as environment variables on Render. Do not put them in the code.
+
+The dashboard creates these tabs in the attendance Google Sheet on first load:
+
+| Tab | Columns | Purpose |
+|-----|---------|---------|
+| Roster | Section, StudentID, Name | Student list. Absence is counted only for students listed here. |
+| Schedule | Section, Day, Start, End, LateAfter | Weekly classes. Empty LateAfter = no late check. |
+| Calendar | Date, Section, Type, Start, End, LateAfter, Note | `หยุด` / `สอบ` / `งดสอน` cancel a class. `สอนชดเชย` adds one. Empty Section = all sections. |
+| Adjustment | Date, Section, StudentID, Status, Note | Status: `กิจกรรม` (counts as present), `มา`, `สาย`, `ขาด` |
+| Settings | Key, Value | `student_dashboard` (on/off), `semester_start`, `semester_end`, `scan_open_minutes_before` |
+
+Rules: a scan after `LateAfter` (e.g. 09:46:00 for 09:45) is late. Two lates count as one absence.
+Scans are accepted from `scan_open_minutes_before` minutes before the start until the end of class.
+Other scans are listed under "รอตรวจสอบ" on the teacher dashboard.
+Dates in the tabs use `YYYY-MM-DD`. Data is cached for 1 minute.

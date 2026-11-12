@@ -4,6 +4,8 @@ const session = require('express-session');
 const { google } = require('googleapis');
 const crypto = require('crypto');
 const path = require('path');
+const { createDataSource, normId } = require('./dashboard');
+const pages = require('./dashboard-pages');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -120,6 +122,11 @@ async function getSheetsClient() {
   return sheetsClient;
 }
 
+function bangkokIso(date) {
+  const local = new Date(date.getTime() + 7 * 60 * 60 * 1000).toISOString().slice(0, 19);
+  return `${local}+07:00`;
+}
+
 async function recordAttendance(user) {
   const sheets = await getSheetsClient();
   const now = new Date();
@@ -128,10 +135,11 @@ async function recordAttendance(user) {
 
   await sheets.spreadsheets.values.append({
     spreadsheetId: process.env.GOOGLE_SHEET_ID,
-    range: 'Sheet1!A:G',
-    valueInputOption: 'USER_ENTERED',
+    range: 'Sheet1!A:H',
+    valueInputOption: 'RAW',
     requestBody: {
-      values: [[dateStr, timeStr, user.fullName, user.studentId, user.email, 'Present', user.section]]
+      // Column H holds an exact ISO timestamp used by the dashboard.
+      values: [[dateStr, timeStr, user.fullName, user.studentId, user.email, 'Present', user.section, bangkokIso(now)]]
     }
   });
 }
@@ -242,6 +250,110 @@ app.post('/profile', async (req, res) => {
   req.session.user.fullName = fullName;
 
   return processCheckin(req, res);
+});
+
+// --------------- Dashboards ---------------
+
+const dataSource = createDataSource(getSheetsClient, process.env.GOOGLE_SHEET_ID);
+
+function passwordMatches(given, expected) {
+  if (!expected) return false;
+  const a = crypto.createHash('sha256').update(String(given || '')).digest();
+  const b = crypto.createHash('sha256').update(String(expected)).digest();
+  return crypto.timingSafeEqual(a, b);
+}
+
+// Simple brute-force limit: 20 wrong passwords per IP per 10 minutes.
+const failedLogins = new Map();
+function tooManyFailures(ip) {
+  const entry = failedLogins.get(ip);
+  if (!entry || Date.now() - entry.since > 10 * 60 * 1000) return false;
+  return entry.count >= 20;
+}
+function recordFailure(ip) {
+  const entry = failedLogins.get(ip);
+  if (!entry || Date.now() - entry.since > 10 * 60 * 1000) failedLogins.set(ip, { count: 1, since: Date.now() });
+  else entry.count++;
+}
+
+async function loadModel(res, force) {
+  try {
+    return await dataSource.load(force);
+  } catch (err) {
+    console.error('Dashboard load error:', err.message);
+    res.status(500).send(pages.renderDataError(err.message));
+    return null;
+  }
+}
+
+app.get('/', (req, res) => res.redirect('/my'));
+
+app.get('/my', async (req, res) => {
+  const model = await loadModel(res);
+  if (!model) return;
+  res.send(pages.renderMyLogin({ closed: !model.settings.studentDashboardOn }));
+});
+
+app.post('/my', async (req, res) => {
+  const model = await loadModel(res);
+  if (!model) return;
+  if (!model.settings.studentDashboardOn) {
+    return res.send(pages.renderMyLogin({ closed: true }));
+  }
+  const studentId = normId(req.body.studentId);
+  if (tooManyFailures(req.ip)) {
+    return res.status(429).send(pages.renderMyLogin({ error: 'ลองผิดหลายครั้งเกินไป กรุณารอ 10 นาที', studentId }));
+  }
+  if (!passwordMatches(req.body.password, process.env.STUDENT_PASSWORD)) {
+    recordFailure(req.ip);
+    return res.send(pages.renderMyLogin({ error: 'รหัสผ่านไม่ถูกต้อง', studentId }));
+  }
+  const student = model.studentById[studentId];
+  if (!student) {
+    return res.send(pages.renderMyLogin({ error: 'ไม่พบรหัสนักศึกษานี้ในรายชื่อ กรุณาตรวจสอบหรือติดต่ออาจารย์', studentId }));
+  }
+  res.send(pages.renderMyReport(model.studentReport(student), model));
+});
+
+app.get('/teacher', async (req, res) => {
+  if (!req.session.isTeacher) {
+    return res.send(pages.renderTeacherLogin({ notConfigured: !process.env.TEACHER_PASSWORD }));
+  }
+  const model = await loadModel(res, req.query.refresh === '1');
+  if (!model) return;
+  res.send(pages.renderTeacherDashboard(model, req.query.section));
+});
+
+app.post('/teacher/login', (req, res) => {
+  if (tooManyFailures(req.ip)) {
+    return res.status(429).send(pages.renderTeacherLogin({ error: 'ลองผิดหลายครั้งเกินไป กรุณารอ 10 นาที' }));
+  }
+  if (!passwordMatches(req.body.password, process.env.TEACHER_PASSWORD)) {
+    recordFailure(req.ip);
+    return res.send(pages.renderTeacherLogin({
+      error: 'รหัสผ่านไม่ถูกต้อง',
+      notConfigured: !process.env.TEACHER_PASSWORD
+    }));
+  }
+  req.session.isTeacher = true;
+  res.redirect('/teacher');
+});
+
+app.get('/teacher/logout', (req, res) => {
+  delete req.session.isTeacher;
+  res.redirect('/teacher');
+});
+
+app.get('/teacher/export.csv', async (req, res) => {
+  if (!req.session.isTeacher) return res.redirect('/teacher');
+  const model = await loadModel(res);
+  if (!model) return;
+  const section = model.sections.includes(req.query.section) ? req.query.section : model.sections[0];
+  if (!section) return res.status(404).send('No section');
+  const filename = `attendance-${section.replace(/[^\w]+/g, '-')}.csv`;
+  res.set('Content-Type', 'text/csv; charset=utf-8');
+  res.set('Content-Disposition', `attachment; filename="${filename}"`);
+  res.send(pages.renderSectionCsv(model, section));
 });
 
 app.get('/logout', (req, res) => {
