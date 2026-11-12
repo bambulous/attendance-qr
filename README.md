@@ -132,3 +132,9 @@ Rules: a scan after `LateAfter` (e.g. 09:46:00 for 09:45) is late. Two lates cou
 Scans are accepted from `scan_open_minutes_before` minutes before the start until the end of class.
 Other scans are listed under "รอตรวจสอบ" on the teacher dashboard.
 Dates in the tabs use `YYYY-MM-DD`. Data is cached for 1 minute.
+
+### Importing a class list
+
+On the teacher dashboard, choose a section and upload the registration-office list (.xls, .xlsx or .csv).
+The system finds each student ID and the name next to it, shows a preview, and after confirmation
+replaces that section's rows in the Roster tab. If the file says a different `Sect.` number, the upload is refused.

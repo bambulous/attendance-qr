@@ -175,7 +175,59 @@ function renderTeacherLogin({ error, notConfigured } = {}) {
   return layout('Teacher Dashboard', body);
 }
 
-function renderTeacherDashboard(model, sectionName) {
+function rosterImportCard(model, section) {
+  const options = model.sections.map(s =>
+    `<option value="${esc(s)}"${s === section ? ' selected' : ''}>${esc(s)}</option>`).join('');
+  return `<div class="card">
+      <h2>นำเข้ารายชื่อนักศึกษา</h2>
+      <p class="muted" style="margin-bottom:14px">อัปโหลดไฟล์ใบรายชื่อจากระบบทะเบียน (.xls, .xlsx หรือ .csv)
+        ระบบจะแทนที่รายชื่อเดิมของกลุ่มที่เลือกในแท็บ Roster</p>
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px;align-items:end">
+        <div><label for="rosterSection">กลุ่มเรียน</label>
+          <select id="rosterSection">${options}</select></div>
+        <div><label for="rosterFile">ไฟล์</label>
+          <input type="file" id="rosterFile" accept=".xls,.xlsx,.csv"></div>
+        <div style="margin-bottom:16px"><button type="button" class="btn full" id="rosterPreviewBtn">ตรวจสอบไฟล์</button></div>
+      </div>
+      <div id="rosterResult"></div>
+    </div>
+    <script>
+    (function () {
+      const btn = document.getElementById('rosterPreviewBtn');
+      const out = document.getElementById('rosterResult');
+      const escHtml = v => String(v).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+      btn.addEventListener('click', async () => {
+        const file = document.getElementById('rosterFile').files[0];
+        const section = document.getElementById('rosterSection').value;
+        if (!file) { out.innerHTML = '<div class="error-banner">กรุณาเลือกไฟล์</div>'; return; }
+        btn.disabled = true; btn.textContent = 'กำลังอ่านไฟล์...';
+        try {
+          const res = await fetch('/teacher/roster/preview?section=' + encodeURIComponent(section), {
+            method: 'POST', headers: { 'Content-Type': 'application/octet-stream' }, body: file
+          });
+          const data = await res.json();
+          if (!res.ok) { out.innerHTML = '<div class="error-banner">' + escHtml(data.error) + '</div>'; return; }
+          const rows = data.students.map((s, i) =>
+            '<tr><td class="num">' + (i + 1) + '</td><td>' + escHtml(s.id) + '</td><td>' + escHtml(s.name) + '</td></tr>').join('');
+          out.innerHTML =
+            (data.warning ? '<div class="error-banner">' + escHtml(data.warning) + '</div>' : '') +
+            '<div class="info-banner">พบนักศึกษา ' + data.students.length + ' คน สำหรับ <strong>' + escHtml(section) +
+            '</strong> (รายชื่อเดิมของกลุ่มนี้ ' + data.existing + ' คน จะถูกแทนที่)</div>' +
+            '<div class="scroll" style="max-height:320px;overflow-y:auto;margin-bottom:14px"><table>' +
+            '<thead><tr><th class="num">#</th><th>รหัส</th><th>ชื่อ-นามสกุล</th></tr></thead><tbody>' + rows + '</tbody></table></div>' +
+            '<form method="POST" action="/teacher/roster/confirm"><input type="hidden" name="token" value="' + escHtml(data.token) + '">' +
+            '<button type="submit" class="btn">ยืนยันบันทึกลงแท็บ Roster</button></form>';
+        } catch (err) {
+          out.innerHTML = '<div class="error-banner">อัปโหลดไม่สำเร็จ: ' + escHtml(err.message) + '</div>';
+        } finally {
+          btn.disabled = false; btn.textContent = 'ตรวจสอบไฟล์';
+        }
+      });
+    })();
+    </script>`;
+}
+
+function renderTeacherDashboard(model, sectionName, flash) {
   const section = model.sections.includes(sectionName) ? sectionName : model.sections[0];
   const tabs = model.sections.map(s =>
     `<a class="tab${s === section ? ' active' : ''}" href="/teacher?section=${encodeURIComponent(s)}">${esc(s)}</a>`
@@ -277,7 +329,9 @@ function renderTeacherDashboard(model, sectionName) {
       </div>
       <div class="tabs">${tabs}</div>
     </div>
+    ${flash ? `<div class="${flash.ok ? 'info-banner' : 'error-banner'}">${esc(flash.message)}</div>` : ''}
     ${content}
+    ${model.sections.length ? rosterImportCard(model, section) : ''}
     <div class="card">
       <h2>รอตรวจสอบ (${model.errors.length})</h2>
       <p class="muted" style="margin-bottom:12px">การสแกนที่ระบบนับให้ไม่ได้ แก้ได้โดยเพิ่มรหัสในแท็บ Roster หรือบันทึกในแท็บ Adjustment</p>

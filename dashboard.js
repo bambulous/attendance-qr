@@ -8,6 +8,8 @@
 //   Adjustment  Date | Section | StudentID | Status | Note
 //   Settings    Key | Value
 
+const XLSX = require('xlsx');
+
 const LOG_SHEET = 'Sheet1';
 const CACHE_MS = 60 * 1000;
 const BKK_OFFSET_MS = 7 * 60 * 60 * 1000;
@@ -207,7 +209,66 @@ function createDataSource(getSheetsClient, spreadsheetId) {
     return cache;
   }
 
-  return { load };
+  // Replace all Roster rows of one section with new students.
+  async function replaceRoster(section, newStudents) {
+    const sheets = await getSheetsClient();
+    await ensureTabs(sheets);
+    const res = await sheets.spreadsheets.values.get({ spreadsheetId, range: 'Roster!A2:C' });
+    const target = normSection(section);
+    const kept = (res.data.values || []).filter(r => str(r[1]) && normSection(r[0]) !== target);
+    const rows = kept.concat(newStudents.map(st => [section, st.id, st.name]));
+    rows.sort((a, b) => str(a[0]).localeCompare(str(b[0])) || str(a[1]).localeCompare(str(b[1])));
+    await sheets.spreadsheets.values.clear({ spreadsheetId, range: 'Roster!A2:C' });
+    if (rows.length) {
+      await sheets.spreadsheets.values.update({
+        spreadsheetId,
+        range: 'Roster!A2',
+        valueInputOption: 'RAW',
+        requestBody: { values: rows }
+      });
+    }
+    cache = null;
+    return { total: rows.length, removed: (res.data.values || []).length - kept.length };
+  }
+
+  return { load, replaceRoster };
+}
+
+// ---------------- Roster file import ----------------
+
+const ID_PATTERN = /^\d{8,13}$/;
+const NAME_PATTERN = /[\u0E00-\u0E7Fa-zA-Z]/;
+
+// Reads a registration-office class list (.xls / .xlsx / .csv).
+// Finds rows that contain a student ID and takes the next text cell as the name.
+function parseRosterFile(buffer) {
+  const wb = XLSX.read(buffer, { type: 'buffer' });
+  const students = [];
+  const seen = new Set();
+  let text = '';
+  wb.SheetNames.forEach(name => {
+    const rows = XLSX.utils.sheet_to_json(wb.Sheets[name], { header: 1, raw: false, defval: '' });
+    rows.forEach(row => {
+      text += ' ' + row.join(' ');
+      for (let i = 0; i < row.length; i++) {
+        const id = normId(row[i]);
+        if (!ID_PATTERN.test(id)) continue;
+        const nameCell = row.slice(i + 1).map(str).find(v => NAME_PATTERN.test(v));
+        if (nameCell && !seen.has(id)) {
+          seen.add(id);
+          students.push({ id, name: nameCell.replace(/\s+/g, ' ') });
+        }
+        break;
+      }
+    });
+  });
+  const m = /\bSect?(?:ion)?\.?\s*(\d+)\b/i.exec(text);
+  return { students, sectionNumber: m ? m[1] : null };
+}
+
+function sectionNumberOf(section) {
+  const m = /^Sec(?:t|tion)?\.?\s*(\d+)\b/i.exec(str(section));
+  return m ? m[1] : null;
 }
 
 // ---------------- Model ----------------
@@ -395,5 +456,5 @@ function buildModel(raw, nowMs) {
 }
 
 module.exports = {
-  createDataSource, buildModel, thaiDate, fmtTime, normId, TAB_DEFAULTS, LOG_SHEET
+  createDataSource, parseRosterFile, sectionNumberOf, buildModel, thaiDate, fmtTime, normId, TAB_DEFAULTS, LOG_SHEET
 };

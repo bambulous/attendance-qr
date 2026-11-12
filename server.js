@@ -4,7 +4,7 @@ const session = require('express-session');
 const { google } = require('googleapis');
 const crypto = require('crypto');
 const path = require('path');
-const { createDataSource, normId } = require('./dashboard');
+const { createDataSource, normId, parseRosterFile, sectionNumberOf } = require('./dashboard');
 const pages = require('./dashboard-pages');
 
 const app = express();
@@ -321,7 +321,9 @@ app.get('/teacher', async (req, res) => {
   }
   const model = await loadModel(res, req.query.refresh === '1');
   if (!model) return;
-  res.send(pages.renderTeacherDashboard(model, req.query.section));
+  const flash = req.session.flash;
+  delete req.session.flash;
+  res.send(pages.renderTeacherDashboard(model, req.query.section || (flash && flash.section), flash));
 });
 
 app.post('/teacher/login', (req, res) => {
@@ -342,6 +344,65 @@ app.post('/teacher/login', (req, res) => {
 app.get('/teacher/logout', (req, res) => {
   delete req.session.isTeacher;
   res.redirect('/teacher');
+});
+
+// Roster import: step 1 parses the uploaded file and keeps the result in the session.
+app.post('/teacher/roster/preview',
+  express.raw({ type: 'application/octet-stream', limit: '5mb' }),
+  async (req, res) => {
+    if (!req.session.isTeacher) return res.status(401).json({ error: 'กรุณาเข้าสู่ระบบใหม่' });
+    const model = await dataSource.load().catch(err => ({ error: err.message }));
+    if (model.error) return res.status(500).json({ error: model.error });
+    const section = req.query.section;
+    if (!model.sections.includes(section)) return res.status(400).json({ error: 'ไม่พบกลุ่มเรียนนี้ในแท็บ Schedule' });
+    if (!req.body || !req.body.length) return res.status(400).json({ error: 'ไฟล์ว่างเปล่า' });
+
+    let parsed;
+    try {
+      parsed = parseRosterFile(req.body);
+    } catch (err) {
+      return res.status(400).json({ error: 'อ่านไฟล์ไม่ได้ กรุณาใช้ไฟล์ .xls, .xlsx หรือ .csv' });
+    }
+    if (!parsed.students.length) {
+      return res.status(400).json({ error: 'ไม่พบรหัสนักศึกษาในไฟล์นี้' });
+    }
+    const expected = sectionNumberOf(section);
+    if (parsed.sectionNumber && expected && parsed.sectionNumber !== expected) {
+      return res.status(400).json({
+        error: `ไฟล์นี้เป็นใบรายชื่อของ Sect.${parsed.sectionNumber} แต่เลือกกลุ่ม ${section} กรุณาเลือกกลุ่มให้ตรงกัน`
+      });
+    }
+    const token = crypto.randomBytes(8).toString('hex');
+    req.session.pendingRoster = { token, section, students: parsed.students };
+    res.json({
+      token,
+      students: parsed.students,
+      existing: model.students.filter(s => s.section === section).length,
+      warning: parsed.sectionNumber ? '' : 'ไม่พบเลข Section ในไฟล์ กรุณาตรวจสอบว่าเลือกกลุ่มถูกต้อง'
+    });
+  });
+
+// Step 2: write the previewed list to the Roster tab.
+app.post('/teacher/roster/confirm', async (req, res) => {
+  if (!req.session.isTeacher) return res.redirect('/teacher');
+  const pending = req.session.pendingRoster;
+  delete req.session.pendingRoster;
+  if (!pending || pending.token !== req.body.token) {
+    req.session.flash = { ok: false, message: 'หมดเวลายืนยัน กรุณาอัปโหลดไฟล์ใหม่' };
+    return res.redirect('/teacher');
+  }
+  try {
+    await dataSource.replaceRoster(pending.section, pending.students);
+    req.session.flash = {
+      ok: true,
+      section: pending.section,
+      message: `บันทึกรายชื่อ ${pending.section} จำนวน ${pending.students.length} คนลงแท็บ Roster แล้ว`
+    };
+  } catch (err) {
+    console.error('Roster import error:', err.message);
+    req.session.flash = { ok: false, section: pending.section, message: `บันทึกไม่สำเร็จ: ${err.message}` };
+  }
+  res.redirect('/teacher?section=' + encodeURIComponent(pending.section));
 });
 
 app.get('/teacher/export.csv', async (req, res) => {
