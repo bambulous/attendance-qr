@@ -138,3 +138,23 @@ Dates in the tabs use `YYYY-MM-DD`. Data is cached for 1 minute.
 On the teacher dashboard, choose a section and upload the registration-office list (.xls, .xlsx or .csv).
 The system finds each student ID and the name next to it, shows a preview, and after confirmation
 replaces that section's rows in the Roster tab. If the file says a different `Sect.` number, the upload is refused.
+
+## Grade Management (Gen Eng sections)
+
+Teacher dashboard → tab **คะแนน** (`/teacher/grades`). Sections are listed in Settings `grade_sections`.
+
+| Component | Items | Raw max | Weight |
+|---|---|---|---|
+| Attendance | auto from check-ins, 10 × (held − total absences) ÷ held; teacher can override | 10 | 10 |
+| Quiz | 4 | 15 each | 15 |
+| Conversation | 6 | 5 each | 15 |
+| Midterm | 1 | Settings `midterm_max` (60) | 20 |
+| Final | 1 | Settings `final_max` (60) | 20 |
+| Speexx | 1 | Settings `speexx_max` (10) | 10 |
+| Pre-test / Post-test | completion: blank / done / not done | – | 5 each |
+
+- Raw scores are stored in the **Grades** tab (one row per term + section + student). Edit them only through the web page.
+- Every change is logged in **GradeHistory** (time, editor, old value, new value).
+- Blank means "not recorded" and is different from 0. Totals are provisional until every item is recorded.
+- University columns: coursework /60, midterm /20, final /20, each rounded to 2 decimals.
+- Export: `.xlsx` and `.csv`. Students see only the items ticked under "เปิดคะแนนให้นักศึกษาดู" (Settings `grades_visible`).

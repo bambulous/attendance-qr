@@ -6,6 +6,8 @@ const crypto = require('crypto');
 const path = require('path');
 const { createDataSource, normId, parseRosterFile, sectionNumberOf } = require('./dashboard');
 const pages = require('./dashboard-pages');
+const grades = require('./grades');
+const gradePages = require('./grades-pages');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -255,6 +257,7 @@ app.post('/profile', async (req, res) => {
 // --------------- Dashboards ---------------
 
 const dataSource = createDataSource(getSheetsClient, process.env.GOOGLE_SHEET_ID);
+const gradeStore = grades.createGradeStore(getSheetsClient, process.env.GOOGLE_SHEET_ID, dataSource);
 
 function passwordMatches(given, expected) {
   if (!expected) return false;
@@ -312,7 +315,19 @@ app.post('/my', async (req, res) => {
   if (!student) {
     return res.send(pages.renderMyLogin({ error: 'ไม่พบรหัสนักศึกษานี้ในรายชื่อ กรุณาตรวจสอบหรือติดต่ออาจารย์', studentId }));
   }
-  res.send(pages.renderMyReport(model.studentReport(student), model));
+  let gradeInfo = null;
+  const cfg = grades.gradeConfig(model);
+  if (cfg.visible.size && cfg.sections.includes(student.section)) {
+    try {
+      const records = await gradeStore.load();
+      const rec = gradeStore.get(records, cfg.term, student.section, student.id);
+      const calc = grades.computeGrade(rec, model.studentReport(student), cfg);
+      gradeInfo = { items: gradePages.studentGradeItems(rec, calc, cfg) };
+    } catch (err) {
+      console.error('Grade load error:', err.message);
+    }
+  }
+  res.send(pages.renderMyReport(model.studentReport(student), model, gradeInfo));
 });
 
 app.get('/teacher', async (req, res) => {
@@ -403,6 +418,109 @@ app.post('/teacher/roster/confirm', async (req, res) => {
     req.session.flash = { ok: false, section: pending.section, message: `บันทึกไม่สำเร็จ: ${err.message}` };
   }
   res.redirect('/teacher?section=' + encodeURIComponent(pending.section));
+});
+
+// --------------- Grades ---------------
+
+async function loadGradeView(res, section, force) {
+  const model = await loadModel(res, force);
+  if (!model) return null;
+  const cfg = grades.gradeConfig(model);
+  const chosen = cfg.sections.includes(section) ? section : cfg.sections[0];
+  if (!chosen) return { model, cfg, view: null };
+  try {
+    const records = await gradeStore.load(force);
+    return { model, cfg, records, view: grades.sectionGrades(model, records, gradeStore, cfg, chosen) };
+  } catch (err) {
+    console.error('Grade load error:', err.message);
+    res.status(500).send(pages.renderDataError(err.message));
+    return null;
+  }
+}
+
+app.get('/teacher/grades', async (req, res) => {
+  if (!req.session.isTeacher) return res.redirect('/teacher');
+  const data = await loadGradeView(res, req.query.section || (req.session.flash && req.session.flash.section), req.query.refresh === '1');
+  if (!data) return;
+  const flash = req.session.flash;
+  delete req.session.flash;
+  res.send(gradePages.renderGradesPage(data.model, data.cfg, data.view, flash));
+});
+
+app.post('/teacher/grades/save', async (req, res) => {
+  if (!req.session.isTeacher) return res.status(401).json({ error: 'กรุณาเข้าสู่ระบบใหม่' });
+  let model;
+  try {
+    model = await dataSource.load();
+  } catch (err) {
+    return res.status(500).json({ error: err.message });
+  }
+  const cfg = grades.gradeConfig(model);
+  const section = req.body && req.body.section;
+  if (!cfg.sections.includes(section)) return res.status(400).json({ error: 'กลุ่มเรียนนี้ไม่ได้ใช้ระบบคะแนน' });
+  const changes = Array.isArray(req.body.changes) ? req.body.changes.slice(0, 2000) : [];
+  const defs = grades.fieldDefs(cfg);
+  const enrolled = new Set(model.students.filter(s => s.section === section).map(s => s.id));
+
+  const valid = [];
+  const errors = [];
+  changes.forEach(ch => {
+    const studentId = normId(ch && ch.studentId);
+    const def = defs.find(d => d.key === (ch && ch.field));
+    if (!enrolled.has(studentId)) return errors.push({ studentId, field: ch && ch.field, message: `ไม่พบรหัส ${studentId} ในกลุ่มนี้` });
+    if (!def) return errors.push({ studentId, field: ch.field, message: 'ไม่รู้จักช่องคะแนนนี้' });
+    const v = grades.validateValue(def, ch.value);
+    if (v.error) return errors.push({ studentId, field: def.key, message: v.error });
+    valid.push({ studentId, field: def.key, value: v.value });
+  });
+
+  try {
+    if (valid.length) await gradeStore.save(cfg.term, section, valid, 'teacher');
+    const records = await gradeStore.load(true);
+    const rows = {};
+    new Set(valid.map(v => v.studentId)).forEach(id => {
+      const st = model.studentById[id];
+      const rec = gradeStore.get(records, cfg.term, section, id);
+      const calc = grades.computeGrade(rec, model.studentReport(st), cfg);
+      rows[id] = gradePages.rowPayload({ student: st, rec, calc });
+    });
+    res.status(errors.length && !valid.length ? 400 : 200).json({ rows, errors });
+  } catch (err) {
+    console.error('Grade save error:', err.message);
+    res.status(500).json({ error: `บันทึกไม่สำเร็จ: ${err.message}` });
+  }
+});
+
+app.post('/teacher/grades/visibility', async (req, res) => {
+  if (!req.session.isTeacher) return res.redirect('/teacher');
+  const model = await loadModel(res);
+  if (!model) return;
+  const cfg = grades.gradeConfig(model);
+  const allowed = new Set(grades.visibleItemDefs(cfg).map(d => d.key));
+  const items = [].concat(req.body.items || []).filter(k => allowed.has(k));
+  try {
+    await dataSource.updateSetting('grades_visible', items.join(','));
+    req.session.flash = { ok: true, section: req.body.section, message: `บันทึกแล้ว เปิดให้นักศึกษาดู ${items.length} รายการ` };
+  } catch (err) {
+    req.session.flash = { ok: false, section: req.body.section, message: `บันทึกไม่สำเร็จ: ${err.message}` };
+  }
+  res.redirect('/teacher/grades?section=' + encodeURIComponent(req.body.section || ''));
+});
+
+app.get('/teacher/grades/export.:format(xlsx|csv)', async (req, res) => {
+  if (!req.session.isTeacher) return res.redirect('/teacher');
+  const data = await loadGradeView(res, req.query.section);
+  if (!data) return;
+  if (!data.view) return res.status(404).send('No section');
+  const base = `grades-${data.cfg.term.replace(/\W+/g, '-')}-${data.view.section.replace(/[^\w]+/g, '-')}`;
+  if (req.params.format === 'xlsx') {
+    res.set('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.set('Content-Disposition', `attachment; filename="${base}.xlsx"`);
+    return res.send(gradePages.gradesXlsx(data.view, data.cfg));
+  }
+  res.set('Content-Type', 'text/csv; charset=utf-8');
+  res.set('Content-Disposition', `attachment; filename="${base}.csv"`);
+  res.send(gradePages.gradesCsv(data.view, data.cfg));
 });
 
 app.get('/teacher/export.csv', async (req, res) => {

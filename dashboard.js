@@ -52,7 +52,22 @@ const TAB_DEFAULTS = {
     ['student_dashboard', 'off', 'on = เปิดให้นักศึกษาดูข้อมูล, off = ปิด'],
     ['semester_start', '2026-11-16', 'วันแรกของสัปดาห์ที่ 1 (YYYY-MM-DD)'],
     ['semester_end', '2027-03-05', 'วันสุดท้ายของสัปดาห์ที่ 15 (YYYY-MM-DD)'],
-    ['scan_open_minutes_before', '30', 'รับการสแกนก่อนเวลาเริ่มเรียนกี่นาที']
+    ['scan_open_minutes_before', '30', 'รับการสแกนก่อนเวลาเริ่มเรียนกี่นาที'],
+    ['term', '2/2569', 'ภาคการศึกษาที่ใช้บันทึกคะแนน'],
+    ['grade_sections', 'Sec 9 Gen Eng, Sec 10 Gen Eng, Sec 14 Gen Eng, Sec 20 Gen Eng', 'กลุ่มเรียนที่ใช้ระบบคะแนน (คั่นด้วย ,)'],
+    ['midterm_max', '60', 'คะแนนเต็มสอบกลางภาค (คะแนนดิบ)'],
+    ['final_max', '60', 'คะแนนเต็มสอบปลายภาค (คะแนนดิบ)'],
+    ['speexx_max', '10', 'คะแนนเต็ม Speexx (คะแนนดิบ)'],
+    ['grades_visible', '', 'คะแนนที่เปิดให้นักศึกษาดู (ตั้งค่าจากหน้าคะแนนในเว็บ)']
+  ],
+  Grades: [
+    ['Term', 'Section', 'StudentID', 'attendance_override',
+      'quiz_1', 'quiz_2', 'quiz_3', 'quiz_4',
+      'conversation_1', 'conversation_2', 'conversation_3', 'conversation_4', 'conversation_5', 'conversation_6',
+      'midterm_score', 'final_score', 'speexx_score', 'pretest', 'posttest', 'UpdatedAt']
+  ],
+  GradeHistory: [
+    ['Timestamp', 'Editor', 'Term', 'Section', 'StudentID', 'Field', 'OldValue', 'NewValue']
   ]
 };
 
@@ -188,7 +203,34 @@ function createDataSource(getSheetsClient, spreadsheetId) {
         }
       });
     }
+    // Add Settings keys introduced after the tab was first created.
+    const keyRes = await sheets.spreadsheets.values.get({ spreadsheetId, range: 'Settings!A:A' });
+    const keys = new Set((keyRes.data.values || []).map(r => str(r[0]).toLowerCase()));
+    const missingKeys = TAB_DEFAULTS.Settings.slice(1).filter(r => !keys.has(r[0]));
+    if (missingKeys.length) {
+      await sheets.spreadsheets.values.append({
+        spreadsheetId,
+        range: 'Settings!A:C',
+        valueInputOption: 'RAW',
+        requestBody: { values: missingKeys }
+      });
+    }
     ensured = true;
+  }
+
+  async function updateSetting(key, value) {
+    const sheets = await getSheetsClient();
+    await ensureTabs(sheets);
+    const res = await sheets.spreadsheets.values.get({ spreadsheetId, range: 'Settings!A:A' });
+    const idx = (res.data.values || []).findIndex(r => str(r[0]).toLowerCase() === key);
+    if (idx < 0) throw new Error(`Setting ${key} not found`);
+    await sheets.spreadsheets.values.update({
+      spreadsheetId,
+      range: `Settings!B${idx + 1}`,
+      valueInputOption: 'RAW',
+      requestBody: { values: [[value]] }
+    });
+    cache = null;
   }
 
   async function load(force) {
@@ -231,7 +273,11 @@ function createDataSource(getSheetsClient, spreadsheetId) {
     return { total: rows.length, removed: (res.data.values || []).length - kept.length };
   }
 
-  return { load, replaceRoster };
+  return {
+    load, replaceRoster, updateSetting,
+    invalidate: () => { cache = null; },
+    ensure: async () => ensureTabs(await getSheetsClient())
+  };
 }
 
 // ---------------- Roster file import ----------------
@@ -450,11 +496,12 @@ function buildModel(raw, nowMs) {
   }
 
   return {
-    sections, students, sessions, errors, studentById, settings: { semStart, semEnd, scanOpenBefore, studentDashboardOn },
+    sections, students, sessions, errors, studentById,
+    settings: { semStart, semEnd, scanOpenBefore, studentDashboardOn, raw: settings },
     studentReport, sectionReport, statusFor, loadedAt: nowMs
   };
 }
 
 module.exports = {
-  createDataSource, parseRosterFile, sectionNumberOf, buildModel, thaiDate, fmtTime, normId, TAB_DEFAULTS, LOG_SHEET
+  str, createDataSource, parseRosterFile, sectionNumberOf, buildModel, thaiDate, fmtTime, normId, TAB_DEFAULTS, LOG_SHEET
 };

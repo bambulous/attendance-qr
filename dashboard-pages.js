@@ -132,7 +132,17 @@ function renderMyLogin({ error, closed, studentId } = {}) {
   return layout('ตรวจสอบการเข้าเรียน', body, { lock: true });
 }
 
-function renderMyReport(report, model) {
+function gradeCard(grades) {
+  if (!grades || !grades.items.length) return '';
+  const rows = grades.items.map(i => `<tr><td>${esc(i.label)}</td><td class="num"><strong>${esc(i.value)}</strong></td></tr>`).join('');
+  return `<div class="card">
+      <h2>คะแนน</h2>
+      <div class="scroll"><table><tbody>${rows}</tbody></table></div>
+      <p class="muted" style="margin-top:12px">แสดงเฉพาะคะแนนที่อาจารย์เปิดให้ดู "-" หมายถึงยังไม่ได้บันทึก</p>
+    </div>`;
+}
+
+function renderMyReport(report, model, grades) {
   const st = report.student;
   const rows = report.rows.slice().reverse().map(r => `
           <tr>
@@ -154,6 +164,7 @@ function renderMyReport(report, model) {
       </table></div>` : '<p class="muted">ยังไม่มีคาบเรียน</p>'}
       <p class="muted" style="margin-top:14px">ข้อมูลอัปเดตทุก 1 นาที หากข้อมูลไม่ถูกต้อง กรุณาติดต่ออาจารย์</p>
     </div>
+    ${gradeCard(grades)}
     <a class="btn ghost full" href="/my">ค้นหาใหม่</a>`;
   return layout(`การเข้าเรียน ${st.id}`, body, { lock: true });
 }
@@ -315,6 +326,7 @@ function renderTeacherDashboard(model, sectionName, flash) {
           </tr>`).join('');
 
   const body = `<div class="card">
+      ${teacherNav('attendance')}
       <div class="toolbar">
         <div>
           <h1>Teacher Dashboard</h1>
@@ -374,6 +386,12 @@ function renderDataError(message) {
     </div>`);
 }
 
+function teacherNav(active) {
+  const item = (key, href, label) =>
+    `<a class="tab${active === key ? ' active' : ''}" href="${href}">${label}</a>`;
+  return `<div class="tabs" style="margin:0 0 12px">${item('attendance', '/teacher', 'เช็คชื่อ')}${item('grades', '/teacher/grades', 'คะแนน')}</div>`;
+}
+
 module.exports = {
-  renderMyLogin, renderMyReport, renderTeacherLogin, renderTeacherDashboard, renderSectionCsv, renderDataError, esc
+  layout, teacherNav, STATUS, renderMyLogin, renderMyReport, renderTeacherLogin, renderTeacherDashboard, renderSectionCsv, renderDataError, esc
 };
