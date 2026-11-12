@@ -29,6 +29,13 @@ app.use(express.urlencoded({ extended: false }));
 // --------------- Token Management ---------------
 
 const TOKEN_TTL_SECONDS = 120;
+// Extra seconds a QR is still accepted after it changes (student scanned at the last moment).
+const TOKEN_GRACE_SECONDS = 15;
+// Time allowed between a valid scan and submitting the form (Google login + typing).
+const CHECKIN_FORM_WINDOW_MS = 15 * 60 * 1000;
+// Tokens are signed, so they stay valid across server restarts and redeploys
+// as long as SESSION_SECRET is set.
+const TOKEN_SECRET = process.env.SESSION_SECRET || crypto.randomBytes(32).toString('hex');
 
 const SECTIONS = [
   'Sec 1 สนทนาภาษาอังกฤษเพื่องานบริการ',
@@ -40,16 +47,37 @@ const SECTIONS = [
 
 const THAI_NAME_PATTERN = /^[\u0E00-\u0E7F]+(?:\s+[\u0E00-\u0E7F]+)+$/;
 
-let currentToken = null;
-let tokenCreatedAt = null;
-
-function rotateToken() {
-  currentToken = crypto.randomBytes(16).toString('hex');
-  tokenCreatedAt = Date.now();
+function signWindow(windowIndex) {
+  return crypto.createHmac('sha256', TOKEN_SECRET)
+    .update(`qr-window:${windowIndex}`)
+    .digest('hex')
+    .slice(0, 32);
 }
 
-rotateToken();
-setInterval(rotateToken, TOKEN_TTL_SECONDS * 1000);
+function currentWindow(now = Date.now()) {
+  return Math.floor(now / (TOKEN_TTL_SECONDS * 1000));
+}
+
+function tokenForWindow(windowIndex) {
+  return `${windowIndex}.${signWindow(windowIndex)}`;
+}
+
+function isTokenValid(token, now = Date.now()) {
+  const match = /^(\d+)\.([0-9a-f]{32})$/.exec(token || '');
+  if (!match) return false;
+  const windowIndex = Number(match[1]);
+  const expected = Buffer.from(signWindow(windowIndex));
+  const given = Buffer.from(match[2]);
+  if (!crypto.timingSafeEqual(expected, given)) return false;
+
+  const nowWindow = currentWindow(now);
+  if (windowIndex === nowWindow) return true;
+  if (windowIndex === nowWindow - 1) {
+    const secondsIntoWindow = (now % (TOKEN_TTL_SECONDS * 1000)) / 1000;
+    return secondsIntoWindow <= TOKEN_GRACE_SECONDS;
+  }
+  return false;
+}
 
 // --------------- Google APIs ---------------
 
@@ -111,13 +139,16 @@ async function recordAttendance(user) {
 // --------------- Routes ---------------
 
 app.get('/api/token', (req, res) => {
-  const elapsed = Math.floor((Date.now() - tokenCreatedAt) / 1000);
-  const remaining = Math.max(0, TOKEN_TTL_SECONDS - elapsed);
+  const now = Date.now();
+  const token = tokenForWindow(currentWindow(now));
+  const elapsed = Math.floor((now % (TOKEN_TTL_SECONDS * 1000)) / 1000);
+  const remaining = Math.max(1, TOKEN_TTL_SECONDS - elapsed);
+  res.set('Cache-Control', 'no-store');
   res.json({
-    token: currentToken,
+    token,
     remainingSeconds: remaining,
     ttlSeconds: TOKEN_TTL_SECONDS,
-    checkinUrl: `${BASE_URL}/checkin?token=${currentToken}`
+    checkinUrl: `${BASE_URL}/checkin?token=${token}`
   });
 });
 
@@ -127,7 +158,17 @@ app.get('/checkin', (req, res) => {
     return res.status(400).send(renderPage('Error', 'Missing token', 'red'));
   }
 
+  if (!isTokenValid(token)) {
+    return res.send(renderPage(
+      'QR Code หมดอายุ',
+      'QR code นี้หมดอายุแล้ว กรุณาสแกน QR code ใหม่จากหน้าจอของอาจารย์',
+      'red'
+    ));
+  }
+
+  // The scan is checked here. The student then has time to log in and fill the form.
   req.session.pendingToken = token;
+  req.session.scannedAt = Date.now();
 
   if (req.session.user) {
     return res.redirect('/profile');
@@ -209,13 +250,14 @@ app.get('/logout', (req, res) => {
 });
 
 async function processCheckin(req, res) {
-  const token = req.session.pendingToken;
+  const scannedAt = req.session.scannedAt || 0;
   delete req.session.pendingToken;
+  delete req.session.scannedAt;
 
-  if (token !== currentToken) {
+  if (Date.now() - scannedAt > CHECKIN_FORM_WINDOW_MS) {
     return res.send(renderPage(
-      'QR Code Expired',
-      'The QR code has expired. Please scan the new QR code from the teacher.',
+      'หมดเวลากรอกข้อมูล',
+      'ใช้เวลากรอกข้อมูลนานเกินไป กรุณาสแกน QR code ใหม่จากหน้าจอของอาจารย์',
       'red'
     ));
   }
