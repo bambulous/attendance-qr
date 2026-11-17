@@ -45,7 +45,7 @@ const TAB_DEFAULTS = {
     ['2027-03-12', '', 'สอบ', '', '', '', 'สอบปลายภาค']
   ],
   Adjustment: [
-    ['Date', 'Section', 'StudentID', 'Status', 'Note']
+    ['Date', 'Section', 'StudentID', 'Status', 'Note', 'SourceRow']
   ],
   Settings: [
     ['Key', 'Value', 'Description'],
@@ -174,6 +174,17 @@ function normStatus(v) {
   return null;
 }
 
+function editDistance(a, b) {
+  const dp = Array.from({ length: a.length + 1 }, (_, i) => [i]);
+  for (let j = 1; j <= b.length; j++) dp[0][j] = j;
+  for (let i = 1; i <= a.length; i++) {
+    for (let j = 1; j <= b.length; j++) {
+      dp[i][j] = Math.min(dp[i - 1][j] + 1, dp[i][j - 1] + 1, dp[i - 1][j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
+    }
+  }
+  return dp[a.length][b.length];
+}
+
 // ---------------- Sheets access ----------------
 
 function createDataSource(getSheetsClient, spreadsheetId) {
@@ -237,7 +248,7 @@ function createDataSource(getSheetsClient, spreadsheetId) {
     if (!force && cache && Date.now() - cacheAt < CACHE_MS) return cache;
     const sheets = await getSheetsClient();
     await ensureTabs(sheets);
-    const ranges = [`${LOG_SHEET}!A:H`, 'Roster!A:C', 'Schedule!A:E', 'Calendar!A:G', 'Adjustment!A:E', 'Settings!A:B'];
+    const ranges = [`${LOG_SHEET}!A:H`, 'Roster!A:C', 'Schedule!A:E', 'Calendar!A:G', 'Adjustment!A:F', 'Settings!A:B'];
     const res = await sheets.spreadsheets.values.batchGet({
       spreadsheetId,
       ranges,
@@ -273,8 +284,25 @@ function createDataSource(getSheetsClient, spreadsheetId) {
     return { total: rows.length, removed: (res.data.values || []).length - kept.length };
   }
 
+  // Adds one Adjustment row. sourceRow links it to the Sheet1 scan it fixes.
+  async function appendAdjustment(row) {
+    const sheets = await getSheetsClient();
+    await ensureTabs(sheets);
+    const head = await sheets.spreadsheets.values.get({ spreadsheetId, range: 'Adjustment!F1' });
+    if (!head.data.values || !str(head.data.values[0] && head.data.values[0][0])) {
+      await sheets.spreadsheets.values.update({
+        spreadsheetId, range: 'Adjustment!F1', valueInputOption: 'RAW', requestBody: { values: [['SourceRow']] }
+      });
+    }
+    await sheets.spreadsheets.values.append({
+      spreadsheetId, range: 'Adjustment!A:F', valueInputOption: 'RAW', insertDataOption: 'INSERT_ROWS',
+      requestBody: { values: [row] }
+    });
+    cache = null;
+  }
+
   return {
-    load, replaceRoster, updateSetting,
+    load, replaceRoster, updateSetting, appendAdjustment,
     invalidate: () => { cache = null; },
     ensure: async () => ensureTabs(await getSheetsClient())
   };
@@ -501,6 +529,11 @@ function buildModel(raw, nowMs) {
 
   // Adjustments
   const adjust = {};
+  const resolvedRows = new Set();
+  raw.adjustment.slice(1).forEach(r => {
+    const src = Number(r[5]);
+    if (Number.isInteger(src) && src > 0) resolvedRows.add(src);
+  });
   raw.adjustment.slice(1).forEach(r => {
     const date = parseDate(r[0]);
     const id = normId(r[2]);
@@ -513,6 +546,41 @@ function buildModel(raw, nowMs) {
     if (!matches.length) return;
     matches.forEach(s => { adjust[`${s.id}|${id}`] = { status, note: str(r[4]) }; });
   });
+
+  // Scans already fixed through an Adjustment row are no longer listed for review.
+  const openErrors = errors.filter(e => !resolvedRows.has(e.row));
+  openErrors.forEach(e => { e.fix = suggestFix(e); });
+
+  function defaultStatus(scan, section) {
+    const s = sessions.find(x => x.section === section && x.date === scan.date);
+    if (!s) return null;
+    return s.lateAfter != null && scan.minutes > s.lateAfter ? 'สาย' : 'มา';
+  }
+
+  // Guess the intended student: email containing the ID, same name, or an ID that differs by a few digits.
+  function suggestFix(e) {
+    const inSection = students.filter(st => st.section === e.section);
+    const candidates = (inSection.length ? inSection : students).slice().sort((a, b) => a.id.localeCompare(b.id));
+    const bare = n => str(n).replace(/^(นางสาว|นาง|นาย|น\.ส\.|ด\.ช\.|ด\.ญ\.)/, '').replace(/\s+/g, '');
+    const emailDigits = (str(e.email).match(/\d{8,13}/) || [''])[0];
+    let best = null;
+    let bestScore = Infinity;
+    candidates.forEach(st => {
+      let score = Infinity;
+      if (emailDigits && emailDigits === st.id) score = 0;
+      else if (bare(st.name) && bare(st.name) === bare(e.name)) score = 1;
+      else {
+        const d = editDistance(st.id, e.id);
+        if (d <= 3) score = 1 + d;
+      }
+      if (score < bestScore) { bestScore = score; best = st; }
+    });
+    return {
+      candidates,
+      suggestedId: best ? best.id : (studentById[e.id] ? e.id : ''),
+      defaultStatus: best ? defaultStatus(e, best.section) : defaultStatus(e, e.section)
+    };
+  }
 
   function statusFor(session, studentId) {
     const key = `${session.id}|${studentId}`;
@@ -557,7 +625,8 @@ function buildModel(raw, nowMs) {
   }
 
   return {
-    sections, students, sessions, errors, studentById,
+    sections, students, sessions, errors: openErrors, allErrors: errors, resolvedCount: errors.length - openErrors.length,
+    studentById, defaultStatus,
     settings: { semStart, semEnd, scanOpenBefore, studentDashboardOn, raw: settings },
     studentReport, sectionReport, statusFor, loadedAt: nowMs
   };

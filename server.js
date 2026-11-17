@@ -523,6 +523,42 @@ app.get('/teacher/grades/export.:format(xlsx|csv)', async (req, res) => {
   res.send(gradePages.gradesCsv(data.view, data.cfg));
 });
 
+// Fix a scan from the review list by adding an Adjustment row for the chosen student.
+app.post('/teacher/fix-scan', async (req, res) => {
+  if (!req.session.isTeacher) return res.redirect('/teacher');
+  const back = '/teacher?section=' + encodeURIComponent(req.body.back || '');
+  let model;
+  try {
+    model = await dataSource.load(true);
+  } catch (err) {
+    req.session.flash = { ok: false, message: `โหลดข้อมูลไม่สำเร็จ: ${err.message}` };
+    return res.redirect(back);
+  }
+  const row = Number(req.body.row);
+  const scan = model.errors.find(e => e.row === row);
+  const student = model.studentById[normId(req.body.studentId)];
+  const statusLabel = ['มา', 'สาย', 'กิจกรรม'].includes(req.body.status) ? req.body.status : null;
+  let error = null;
+  if (!scan) error = 'รายการนี้ถูกแก้ไขแล้ว หรือไม่อยู่ในรายการรอตรวจสอบ';
+  else if (!student) error = 'กรุณาเลือกนักศึกษาจากรายชื่อ';
+  else if (!statusLabel) error = 'สถานะไม่ถูกต้อง';
+  else if (!model.sessions.some(s => s.section === student.section && s.date === scan.date)) {
+    error = `${student.section} ไม่มีคาบเรียนในวันที่สแกน จึงบันทึกไม่ได้`;
+  }
+  if (error) {
+    req.session.flash = { ok: false, message: error };
+    return res.redirect(back);
+  }
+  try {
+    const note = `แก้จากรายการรอตรวจสอบ: รหัสที่สแกน ${scan.id} เวลา ${String(Math.floor(scan.minutes / 60)).padStart(2, '0')}:${String(scan.minutes % 60).padStart(2, '0')}`;
+    await dataSource.appendAdjustment([scan.date, student.section, student.id, statusLabel, note, row]);
+    req.session.flash = { ok: true, message: `บันทึกแล้ว: ${student.name} (${student.id}) ${statusLabel} วันที่ ${scan.date}` };
+  } catch (err) {
+    req.session.flash = { ok: false, message: `บันทึกไม่สำเร็จ: ${err.message}` };
+  }
+  res.redirect('/teacher?section=' + encodeURIComponent(student.section));
+});
+
 app.post('/teacher/student-page', async (req, res) => {
   if (!req.session.isTeacher) return res.redirect('/teacher');
   const value = req.body.value === 'on' ? 'on' : 'off';

@@ -314,14 +314,31 @@ function renderTeacherDashboard(model, sectionName, flash) {
     </div>`;
   }
 
+  const fixForm = e => {
+    const opts = e.fix.candidates.map(st =>
+      `<option value="${esc(st.id)}"${st.id === e.fix.suggestedId ? ' selected' : ''}>${esc(st.id)} ${esc(st.name)}</option>`).join('');
+    const status = e.fix.defaultStatus || 'มา';
+    return `<form method="POST" action="/teacher/fix-scan" class="fix-form">
+        <input type="hidden" name="row" value="${e.row}">
+        <input type="hidden" name="back" value="${esc(section || '')}">
+        <select name="studentId" required>
+          <option value=""${e.fix.suggestedId ? '' : ' selected'} disabled>-- เลือกนักศึกษา --</option>${opts}
+        </select>
+        <select name="status">
+          ${['มา', 'สาย', 'กิจกรรม'].map(v => `<option${v === status ? ' selected' : ''}>${v}</option>`).join('')}
+        </select>
+        <button type="submit" class="btn small">บันทึก</button>
+      </form>`;
+  };
   const errors = model.errors.slice().reverse().map(e => `
           <tr>
             <td>${esc(thaiDate(e.date))} ${fmtTime(e.minutes)}</td>
             <td>${esc(e.id)}</td>
             <td>${esc(e.name)}</td>
+            <td>${fixForm(e)}</td>
+            <td>${esc(e.reason)}</td>
             <td>${esc(e.section)}</td>
             <td>${esc(e.email)}</td>
-            <td>${esc(e.reason)}</td>
             <td class="num">${e.row}</td>
           </tr>`).join('');
 
@@ -347,9 +364,13 @@ function renderTeacherDashboard(model, sectionName, flash) {
     ${model.sections.length ? rosterImportCard(model, section) : ''}
     <div class="card">
       <h2>รอตรวจสอบ (${model.errors.length})</h2>
-      <p class="muted" style="margin-bottom:12px">การสแกนที่ระบบนับให้ไม่ได้ แก้ได้โดยเพิ่มรหัสในแท็บ Roster หรือบันทึกในแท็บ Adjustment</p>
+      <p class="muted" style="margin-bottom:12px">การสแกนที่ระบบนับให้ไม่ได้ เลือกนักศึกษาที่ถูกต้องแล้วกดบันทึก
+        (ระบบเลือกให้จากชื่อ อีเมล หรือรหัสที่ใกล้เคียง และตั้งสถานะตามเวลาสแกน) ·
+        ถ้านักศึกษาไม่อยู่ในรายชื่อจริง ให้นำเข้ารายชื่อใหม่แทน
+        ${model.resolvedCount ? ` · แก้ไขแล้ว ${model.resolvedCount} รายการ (ดูในแท็บ Adjustment)` : ''}</p>
+      <style>.fix-form{display:flex;gap:6px;align-items:center}.fix-form select{width:auto;max-width:260px;margin:0;padding:6px 8px;font-size:0.85rem}</style>
       ${model.errors.length ? `<div class="scroll"><table>
-        <thead><tr><th>วันเวลา</th><th>รหัส</th><th>ชื่อ</th><th>กลุ่มเรียน</th><th>อีเมล</th><th>สาเหตุ</th><th class="num">แถวใน Sheet</th></tr></thead>
+        <thead><tr><th>วันเวลา</th><th>รหัส</th><th>ชื่อ</th><th>แก้ไขเป็น</th><th>สาเหตุ</th><th>กลุ่มเรียน</th><th>อีเมล</th><th class="num">แถวใน Sheet</th></tr></thead>
         <tbody>${errors}</tbody>
       </table></div>` : '<p class="muted">ไม่มีรายการ</p>'}
     </div>`;
