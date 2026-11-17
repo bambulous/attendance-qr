@@ -285,16 +285,78 @@ function createDataSource(getSheetsClient, spreadsheetId) {
 const ID_PATTERN = /^\d{8,13}$/;
 const NAME_PATTERN = /[\u0E00-\u0E7Fa-zA-Z]/;
 
-// Reads a registration-office class list (.xls / .xlsx / .csv).
+// Minimal RTF to plain text. The registration office exports class lists as RTF
+// files named .doc (Thai text in code page 874). Cells become tabs, rows become newlines.
+const RTF_SKIP = new Set(['fonttbl', 'colortbl', 'stylesheet', 'info', 'pict',
+  'listtable', 'listoverridetable', 'rsidtbl', 'generator', 'object']);
+
+function rtfToText(buffer) {
+  const src = buffer.toString('latin1');
+  const cpMatch = /\\ansicpg(\d+)/.exec(src);
+  const decoder = new TextDecoder(`windows-${cpMatch ? cpMatch[1] : '874'}`);
+  let out = '';
+  let bytes = [];
+  const flush = () => { if (bytes.length) { out += decoder.decode(Buffer.from(bytes)); bytes = []; } };
+  const emit = t => { flush(); out += t; };
+  const stack = [];
+  let skip = false;
+  let uc = 1;
+  let skipChars = 0;
+  for (let i = 0; i < src.length; i++) {
+    const ch = src[i];
+    if (ch === '{') {
+      stack.push({ skip, uc });
+      if (src[i + 1] === '\\' && src[i + 2] === '*') skip = true;
+      continue;
+    }
+    if (ch === '}') { const st = stack.pop() || { skip: false, uc: 1 }; skip = st.skip; uc = st.uc; continue; }
+    if (ch === '\\') {
+      const next = src[i + 1];
+      if (next === "'") {
+        const hex = src.substr(i + 2, 2);
+        i += 3;
+        if (skipChars > 0) { skipChars--; continue; }
+        if (!skip) bytes.push(parseInt(hex, 16));
+        continue;
+      }
+      if (next === '\\' || next === '{' || next === '}') { i++; if (!skip) bytes.push(next.charCodeAt(0)); continue; }
+      const m = /^([a-zA-Z]+)(-?\d+)? ?/.exec(src.slice(i + 1, i + 40));
+      if (!m) { i++; continue; }
+      i += m[0].length;
+      const word = m[1];
+      if (RTF_SKIP.has(word)) { skip = true; continue; }
+      if (skip) continue;
+      if (word === 'uc') uc = Number(m[2] || 1);
+      else if (word === 'u') { emit(String.fromCharCode((Number(m[2]) + 65536) % 65536)); skipChars = uc; }
+      else if (word === 'par' || word === 'row' || word === 'line') emit('\n');
+      else if (word === 'cell' || word === 'tab') emit('\t');
+      continue;
+    }
+    if (ch === '\r' || ch === '\n') continue;
+    if (skip) continue;
+    if (skipChars > 0) { skipChars--; continue; }
+    bytes.push(ch.charCodeAt(0));
+  }
+  flush();
+  return out;
+}
+
+function rowsFromBuffer(buffer) {
+  if (buffer.slice(0, 5).toString('latin1') === '{\\rtf') {
+    return rtfToText(buffer).split('\n').map(line => line.split('\t'));
+  }
+  const wb = XLSX.read(buffer, { type: 'buffer' });
+  return wb.SheetNames.flatMap(name =>
+    XLSX.utils.sheet_to_json(wb.Sheets[name], { header: 1, raw: false, defval: '' }));
+}
+
+// Reads a registration-office class list (.doc RTF, .xls, .xlsx, .csv).
 // Finds rows that contain a student ID and takes the next text cell as the name.
 function parseRosterFile(buffer) {
-  const wb = XLSX.read(buffer, { type: 'buffer' });
   const students = [];
   const seen = new Set();
   let text = '';
-  wb.SheetNames.forEach(name => {
-    const rows = XLSX.utils.sheet_to_json(wb.Sheets[name], { header: 1, raw: false, defval: '' });
-    rows.forEach(row => {
+  rowsFromBuffer(buffer).forEach(row => {
       text += ' ' + row.join(' ');
       for (let i = 0; i < row.length; i++) {
         const id = normId(row[i]);
@@ -306,9 +368,8 @@ function parseRosterFile(buffer) {
         }
         break;
       }
-    });
   });
-  const m = /\bSect?(?:ion)?\.?\s*(\d+)\b/i.exec(text);
+  const m = /\bSect?(?:ion)?\.?\s*(\d+)\b/i.exec(text) || /กลุ่มที่\s*(\d+)/.exec(text);
   return { students, sectionNumber: m ? m[1] : null };
 }
 

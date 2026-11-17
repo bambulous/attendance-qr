@@ -376,7 +376,7 @@ app.post('/teacher/roster/preview',
     try {
       parsed = parseRosterFile(req.body);
     } catch (err) {
-      return res.status(400).json({ error: 'อ่านไฟล์ไม่ได้ กรุณาใช้ไฟล์ .xls, .xlsx หรือ .csv' });
+      return res.status(400).json({ error: 'อ่านไฟล์ไม่ได้ กรุณาใช้ไฟล์ .doc, .xls, .xlsx หรือ .csv' });
     }
     if (!parsed.students.length) {
       return res.status(400).json({ error: 'ไม่พบรหัสนักศึกษาในไฟล์นี้' });

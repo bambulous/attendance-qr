@@ -135,7 +135,7 @@ Dates in the tabs use `YYYY-MM-DD`. Data is cached for 1 minute.
 
 ### Importing a class list
 
-On the teacher dashboard, choose a section and upload the registration-office list (.xls, .xlsx or .csv).
+On the teacher dashboard, choose a section and upload the registration-office list (.doc RTF export, .xls, .xlsx or .csv).
 The system finds each student ID and the name next to it, shows a preview, and after confirmation
 replaces that section's rows in the Roster tab. If the file says a different `Sect.` number, the upload is refused.
 

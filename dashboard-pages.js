@@ -191,13 +191,13 @@ function rosterImportCard(model, section) {
     `<option value="${esc(s)}"${s === section ? ' selected' : ''}>${esc(s)}</option>`).join('');
   return `<div class="card">
       <h2>นำเข้ารายชื่อนักศึกษา</h2>
-      <p class="muted" style="margin-bottom:14px">อัปโหลดไฟล์ใบรายชื่อจากระบบทะเบียน (.xls, .xlsx หรือ .csv)
+      <p class="muted" style="margin-bottom:14px">อัปโหลดไฟล์ใบรายชื่อจากระบบทะเบียน (.doc, .xls, .xlsx หรือ .csv)
         ระบบจะแทนที่รายชื่อเดิมของกลุ่มที่เลือกในแท็บ Roster</p>
       <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px;align-items:end">
         <div><label for="rosterSection">กลุ่มเรียน</label>
           <select id="rosterSection">${options}</select></div>
         <div><label for="rosterFile">ไฟล์</label>
-          <input type="file" id="rosterFile" accept=".xls,.xlsx,.csv"></div>
+          <input type="file" id="rosterFile" accept=".doc,.rtf,.xls,.xlsx,.csv"></div>
         <div style="margin-bottom:16px"><button type="button" class="btn full" id="rosterPreviewBtn">ตรวจสอบไฟล์</button></div>
       </div>
       <div id="rosterResult"></div>
