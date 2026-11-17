@@ -1,0 +1,240 @@
+<!doctype html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ตารางเรียน 1211001</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Thai:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:#ffffff; --ink:#1f2328; --muted:#6b7280; --line:#e5e7eb; --soft:#f6f7f9;
+    --accent:#2f5bd3; --accent-soft:#e8eefc;
+    --conver:#2f5bd3; --quiz:#d92d20; --test:#7a3fd1;
+    --holiday:#fde7ea; --holiday-ink:#9f1239;
+    --exam:#fff4d6; --exam-ink:#7a5200;
+    --done:#e7f6ec; --done-ink:#1a7f37;
+    --next:#2f5bd3;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;background:var(--bg);color:var(--ink);
+    font-family:"IBM Plex Sans Thai",Tahoma,sans-serif;font-size:15px;line-height:1.5}
+  .wrap{max-width:880px;margin:0 auto;padding:20px 16px 28px}
+  .course{font-size:13px;color:var(--muted);margin:0 0 4px;letter-spacing:.2px}
+  h1{font-size:22px;margin:0 0 16px;font-weight:700}
+
+  .tabs{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:16px}
+  .tab{appearance:none;border:1px solid var(--line);background:#fff;color:var(--ink);
+    font:inherit;font-weight:600;padding:8px 14px;border-radius:999px;cursor:pointer;
+    transition:background .15s,border-color .15s,color .15s}
+  .tab small{display:block;font-weight:400;font-size:11.5px;color:var(--muted)}
+  .tab:hover{border-color:#c7cbd1}
+  .tab[aria-selected="true"]{background:var(--accent);border-color:var(--accent);color:#fff}
+  .tab[aria-selected="true"] small{color:#dbe4fb}
+
+  .head{display:flex;align-items:baseline;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:10px}
+  .head h2{margin:0;font-size:20px}
+  .head h2 span{font-weight:400;color:var(--muted);font-size:16px;margin-left:6px}
+  .nextbox{font-size:13px;background:var(--accent-soft);color:var(--accent);
+    padding:6px 12px;border-radius:8px;font-weight:500}
+
+  table{width:100%;border-collapse:separate;border-spacing:0;border:1px solid var(--line);
+    border-radius:12px;overflow:hidden}
+  th,td{padding:10px 12px;text-align:left;vertical-align:middle;border-bottom:1px solid var(--line)}
+  tr:last-child td{border-bottom:0}
+  th{white-space:nowrap;background:var(--soft);font-size:13px;font-weight:600;color:#4b5563}
+  td.no{width:56px;text-align:center;color:var(--muted);font-variant-numeric:tabular-nums}
+  td.date{width:150px;white-space:nowrap;font-variant-numeric:tabular-nums}
+  td.st{width:118px;text-align:center}
+  th.c{text-align:center}
+  .topic ul{margin:4px 0 0;padding-left:18px;color:#374151}
+  .k-conver{color:var(--conver);font-weight:600}
+  .k-quiz{color:var(--quiz);font-weight:600}
+  .k-test{color:var(--test);font-weight:600}
+
+  tr.holiday td{background:var(--holiday)}
+  tr.holiday .topic{color:var(--holiday-ink);font-weight:600;text-align:center}
+  tr.exam td{background:var(--exam)}
+  tr.exam .topic{color:var(--exam-ink);font-weight:700;text-align:center}
+  tr.past:not(.holiday):not(.exam) td{color:#8b929b}
+  tr.past .k-conver,tr.past .k-quiz,tr.past .k-test{opacity:.7}
+  tr.is-next td{background:#f3f6fe}
+  tr.is-next td:first-child{box-shadow:inset 3px 0 0 var(--next)}
+
+  .pill{display:inline-block;font-size:12px;padding:3px 10px;border-radius:999px;white-space:nowrap;
+    background:#f1f2f4;color:#6b7280}
+  .pill.done{background:var(--done);color:var(--done-ink)}
+  .pill.next{background:var(--next);color:#fff}
+
+  .legend{display:flex;gap:14px;flex-wrap:wrap;margin-top:12px;font-size:12.5px;color:var(--muted)}
+  .legend i{display:inline-block;width:12px;height:12px;border-radius:3px;margin-right:6px;vertical-align:-1px;border:1px solid rgba(0,0,0,.06)}
+  .note{font-size:12px;color:var(--muted);margin-top:6px}
+
+  @media (max-width:600px){
+    .wrap{padding:16px 12px}
+    th,td{padding:9px 8px}
+    td.no{width:44px}
+    th{font-size:12px}
+    td.date{width:auto;white-space:normal}
+    td.st{width:auto}
+    thead th.st-h{display:none}
+    td.st{display:none}
+    .head h2{font-size:18px}
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <p class="course">รายวิชา 1211001 ภาษาอังกฤษทั่วไป · ภาคเรียนที่ 2/2569 · 16 พ.ย. 69 – 12 มี.ค. 70</p>
+  <h1>ตารางเรียนรายสัปดาห์</h1>
+
+  <div class="tabs" role="tablist" id="tabs"></div>
+
+  <div id="panel" role="tabpanel">
+    <div class="head">
+      <h2 id="title"></h2>
+      <div class="nextbox" id="nextbox" hidden></div>
+    </div>
+    <table>
+      <thead><tr><th class="c">ครั้งที่</th><th>วันที่</th><th>หัวข้อ</th><th class="c st-h">สถานะ</th></tr></thead>
+      <tbody id="rows"></tbody>
+    </table>
+    <div class="legend">
+      <span><i style="background:var(--holiday)"></i>วันหยุด/งดเรียน</span>
+      <span><i style="background:var(--exam)"></i>สอบ</span>
+      <span><i style="background:var(--done)"></i>เรียนแล้ว</span>
+      <span><i style="background:var(--next)"></i>ครั้งถัดไป</span>
+    </div>
+    <p class="note">สถานะคำนวณจากวันที่ปัจจุบันโดยอัตโนมัติ</p>
+  </div>
+</div>
+
+<script>
+// type: c = class, h = holiday, x = exam. Dates are ISO (CE).
+const ORIENT = ["Orientation", ["Stretch 3A Online Practice", "Pre-test"]];
+const POST = [
+  "Customs (U4) + Conver 4",
+  "Customs + Quiz 4",
+  "Retention Test + Professionals and skills + Conver 5",
+  "Professionals and skills + Quiz 5",
+  "Recent activities + Conver 6",
+  "Recent activities",
+  "Post-test",
+  "ทบทวน ติดตามงาน",
+  "ทบทวน ติดตามงาน"
+];
+
+const SECTIONS = [
+  { id:"9", day:"พุธ", time:"09.00 - 12.00", room:"L-902", rows:[
+    ["1","c","2026-11-18","พ. 18 พ.ย. 69",ORIENT],
+    ["2","c","2026-11-25","พ. 25 พ.ย. 69","Life experiences + Conver 1"],
+    ["3","c","2026-12-02","พ. 2 ธ.ค. 69","Quiz 1 + Events + Conver 2"],
+    ["4","c","2026-12-09","พ. 9 ธ.ค. 69","Events (U2) + Quiz 2"],
+    ["5","h","2026-12-16","พ. 16 ธ.ค. 69","วันหยุดกรณีพิเศษ (ชดเชย อา. 20 ธ.ค. 69)"],
+    ["6","c","2026-12-23","พ. 23 ธ.ค. 69","Opinions (U3) + Conver 3"],
+    ["7","c","2026-12-30","พ. 30 ธ.ค. 69","Opinions (U3) [VDO ทบทวน]"],
+    ["8","x","2027-01-04","4 ม.ค. 70","สอบกลางภาค"],
+    ...["13 ม.ค.","20 ม.ค.","27 ม.ค.","3 ก.พ.","10 ก.พ.","17 ก.พ.","24 ก.พ.","3 มี.ค.","10 มี.ค."].map((d,i)=>
+      [String(9+i),"c",["2027-01-13","2027-01-20","2027-01-27","2027-02-03","2027-02-10","2027-02-17","2027-02-24","2027-03-03","2027-03-10"][i],"พ. "+d+" 70",POST[i]]),
+    ["-","x","2027-03-08","8 มี.ค. 70","สอบปลายภาค"]
+  ]},
+  { id:"10", day:"พุธ", time:"13.00 - 16.00", room:"L-902", rows:[
+    ["1","c","2026-11-18","พ. 18 พ.ย. 69",ORIENT],
+    ["2","c","2026-11-25","พ. 25 พ.ย. 69","Life experiences + Conver 1"],
+    ["3","c","2026-12-02","พ. 2 ธ.ค. 69","Quiz 1 + Events + Conver 2"],
+    ["4","c","2026-12-09","พ. 9 ธ.ค. 69","Events (U2) + Quiz 2"],
+    ["5","h","2026-12-16","พ. 16 ธ.ค. 69","วันหยุดกรณีพิเศษ (ชดเชย ส. 26 ธ.ค. 69)"],
+    ["6","c","2026-12-23","พ. 23 ธ.ค. 69","Opinions (U3) + Conver 3"],
+    ["7","c","2026-12-30","พ. 30 ธ.ค. 69","Opinions (U3) [VDO ทบทวน]"],
+    ["8","x","2027-01-04","4 ม.ค. 70","สอบกลางภาค"],
+    ...["13 ม.ค.","20 ม.ค.","27 ม.ค.","3 ก.พ.","10 ก.พ.","17 ก.พ.","24 ก.พ.","3 มี.ค.","10 มี.ค."].map((d,i)=>
+      [String(9+i),"c",["2027-01-13","2027-01-20","2027-01-27","2027-02-03","2027-02-10","2027-02-17","2027-02-24","2027-03-03","2027-03-10"][i],"พ. "+d+" 70",POST[i]]),
+    ["-","x","2027-03-08","8 มี.ค. 70","สอบปลายภาค"]
+  ]},
+  { id:"20", day:"พุธ", time:"18.00 - 21.00", room:"602", rows:[
+    ["1","c","2026-11-18","พ. 18 พ.ย. 69",ORIENT],
+    ["2","c","2026-11-25","พ. 25 พ.ย. 69","Life experiences + Conver 1"],
+    ["3","c","2026-12-02","พ. 2 ธ.ค. 69","Quiz 1 + Events + Conver 2"],
+    ["4","c","2026-12-09","พ. 9 ธ.ค. 69","Events (U2) + Quiz 2"],
+    ["5","h","2026-12-16","พ. 16 ธ.ค. 69","วันหยุดกรณีพิเศษ"],
+    ["6","c","2026-12-23","พ. 23 ธ.ค. 69","Opinions (U3) + Conver 3"],
+    ["7","c","2026-12-30","พ. 30 ธ.ค. 69","Opinions (U3) [VDO ทบทวน]"],
+    ["8","x","2027-01-06","6 ม.ค. 70","สอบกลางภาค"],
+    ...["13 ม.ค.","20 ม.ค.","27 ม.ค.","3 ก.พ.","10 ก.พ.","17 ก.พ.","24 ก.พ.","3 มี.ค."].map((d,i)=>
+      [String(9+i),"c",["2027-01-13","2027-01-20","2027-01-27","2027-02-03","2027-02-10","2027-02-17","2027-02-24","2027-03-03"][i],"พ. "+d+" 70",POST[i]]),
+    ["17","x","2027-03-10","พ. 10 มี.ค. 70","สอบปลายภาค"]
+  ]},
+  { id:"14", day:"พฤหัสบดี", time:"09.00 - 12.00", room:"L-903", rows:[
+    ["1","c","2026-11-19","พฤ. 19 พ.ย. 69",ORIENT],
+    ["2","c","2026-11-26","พฤ. 26 พ.ย. 69","Life experiences + Conver 1"],
+    ["3","c","2026-12-03","พฤ. 3 ธ.ค. 69","Quiz 1 + Events + Conver 2"],
+    ["4","h","2026-12-10","พฤ. 10 ธ.ค. 69","วันหยุดรัฐธรรมนูญ"],
+    ["5","c","2026-12-17","พฤ. 17 ธ.ค. 69","Events (U2) + Quiz 2"],
+    ["6","c","2026-12-24","พฤ. 24 ธ.ค. 69","Opinions (U3) + Conver 3 + [VDO ทบทวน]"],
+    ["7","h","2026-12-31","พฤ. 31 ธ.ค. 69","วันหยุดสิ้นปี (ชดเชย ส. 26 ธ.ค. 69)"],
+    ["8","x","2027-01-08","4–8 ม.ค. 70","สอบกลางภาค"],
+    ...["14 ม.ค.","21 ม.ค.","28 ม.ค.","4 ก.พ.","11 ก.พ.","18 ก.พ.","25 ก.พ.","4 มี.ค.","11 มี.ค."].map((d,i)=>
+      [String(9+i),"c",["2027-01-14","2027-01-21","2027-01-28","2027-02-04","2027-02-11","2027-02-18","2027-02-25","2027-03-04","2027-03-11"][i],"พฤ. "+d+" 70",POST[i]]),
+    ["-","x","2027-03-08","8 มี.ค. 70","สอบปลายภาค"]
+  ]}
+];
+
+const esc = s => s.replace(/[&<>]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;"}[c]));
+function hl(t){
+  return esc(t)
+    .replace(/(Conver \d)/g,'<span class="k-conver">$1</span>')
+    .replace(/(Quiz \d)/g,'<span class="k-quiz">$1</span>')
+    .replace(/(Pre-test|Post-test|Retention Test)/g,'<span class="k-test">$1</span>');
+}
+function topicHTML(t){
+  if (Array.isArray(t)) return esc(t[0]) + "<ul>" + t[1].map(x=>"<li>"+hl(x)+"</li>").join("") + "</ul>";
+  return hl(t);
+}
+
+const today = new Date(); today.setHours(0,0,0,0);
+const asDate = iso => { const [y,m,d] = iso.split("-").map(Number); return new Date(y, m-1, d); };
+
+function render(sec){
+  document.getElementById("title").innerHTML =
+    "Sec " + sec.id + "<span>" + esc(sec.day + " " + sec.time + " · ห้อง " + sec.room) + "</span>";
+  const nextIdx = sec.rows.findIndex(r => r[1] === "c" && asDate(r[2]) >= today);
+  const tbody = document.getElementById("rows");
+  tbody.innerHTML = sec.rows.map((r, i) => {
+    const [no, type, iso, label, topic] = r;
+    const past = asDate(iso) < today;
+    const cls = [type==="h"?"holiday":type==="x"?"exam":"", past?"past":"", i===nextIdx?"is-next":""].join(" ").trim();
+    let status = "";
+    if (type === "c") status = i===nextIdx ? '<span class="pill next">ครั้งถัดไป</span>'
+                     : past ? '<span class="pill done">เรียนแล้ว</span>'
+                     : '<span class="pill">ยังไม่เริ่ม</span>';
+    const topicCell = type === "c"
+      ? '<td class="topic">'+topicHTML(topic)+'</td><td class="st">'+status+'</td>'
+      : '<td class="topic" colspan="2">'+esc(topic)+'</td>';
+    return '<tr class="'+cls+'"><td class="no">'+esc(no)+'</td><td class="date">'+esc(label)+'</td>'+topicCell+'</tr>';
+  }).join("");
+  const nb = document.getElementById("nextbox");
+  if (nextIdx >= 0){ const r = sec.rows[nextIdx]; nb.textContent = "เรียนครั้งถัดไป: " + r[3] + " (ครั้งที่ " + r[0] + ")"; nb.hidden = false; }
+  else nb.hidden = true;
+}
+
+const tabs = document.getElementById("tabs");
+SECTIONS.forEach((s, i) => {
+  const b = document.createElement("button");
+  b.className = "tab"; b.setAttribute("role","tab"); b.type = "button";
+  b.innerHTML = "Sec " + s.id + "<small>" + esc(s.day + " " + s.time) + "</small>";
+  b.addEventListener("click", () => {
+    tabs.querySelectorAll(".tab").forEach(t => t.setAttribute("aria-selected","false"));
+    b.setAttribute("aria-selected","true"); render(s);
+    try { localStorage.setItem("sched-1211001-sec", s.id); } catch(e) {}
+  });
+  tabs.appendChild(b);
+});
+let start = 0;
+try { const saved = localStorage.getItem("sched-1211001-sec"); const k = SECTIONS.findIndex(s => s.id === saved); if (k >= 0) start = k; } catch(e) {}
+const hash = (location.hash || "").replace("#sec","");
+const hk = SECTIONS.findIndex(s => s.id === hash); if (hk >= 0) start = hk;
+tabs.children[start].click();
+</script>
+</body>
+</html>
