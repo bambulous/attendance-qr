@@ -1,7 +1,7 @@
 // Grade entry page, exports and the student grade view.
 
 const XLSX = require('xlsx');
-const { layout, teacherNav, esc } = require('./dashboard-pages');
+const { layout, teacherNav, studentPageToggle, esc } = require('./dashboard-pages');
 const { fieldDefs, visibleItemDefs, isBlank } = require('./grades');
 
 const f2 = n => (n == null ? '' : (Math.round((n + Number.EPSILON) * 100) / 100).toFixed(2));
@@ -76,8 +76,9 @@ function renderGradesPage(model, cfg, view, flash) {
   const visibleDefs = visibleItemDefs(cfg);
   const visibility = `<div class="card">
       <h2>เปิดคะแนนให้นักศึกษาดู</h2>
-      <p class="muted" style="margin-bottom:12px">ใช้กับทุกกลุ่มเรียน นักศึกษาเห็นในหน้า /my เมื่อหน้านักศึกษาเปิดอยู่
-        (ตอนนี้: <strong>${model.settings.studentDashboardOn ? 'เปิด' : 'ปิด'}</strong>)</p>
+      <div style="margin-bottom:12px">${studentPageToggle(model, '/teacher/grades?section=' + encodeURIComponent(view.section))}</div>
+      ${model.settings.studentDashboardOn ? '' : '<div class="error-banner">หน้านักศึกษายังปิดอยู่ นักศึกษาจะยังไม่เห็นทั้งการเข้าเรียนและคะแนน จนกว่าจะกดเปิดหน้านักศึกษา</div>'}
+      <p class="muted" style="margin-bottom:12px">เลือกคะแนนที่จะแสดง ใช้กับทุกกลุ่มเรียน</p>
       <form method="POST" action="/teacher/grades/visibility">
         <input type="hidden" name="section" value="${esc(view.section)}">
         <div class="checks">

@@ -523,6 +523,19 @@ app.get('/teacher/grades/export.:format(xlsx|csv)', async (req, res) => {
   res.send(gradePages.gradesCsv(data.view, data.cfg));
 });
 
+app.post('/teacher/student-page', async (req, res) => {
+  if (!req.session.isTeacher) return res.redirect('/teacher');
+  const value = req.body.value === 'on' ? 'on' : 'off';
+  const back = /^\/teacher[\w/?=&%.\-]*$/.test(req.body.back || '') ? req.body.back : '/teacher';
+  try {
+    await dataSource.updateSetting('student_dashboard', value);
+    req.session.flash = { ok: true, message: value === 'on' ? 'เปิดหน้านักศึกษาแล้ว นักศึกษาเข้าดูได้ที่ /my' : 'ปิดหน้านักศึกษาแล้ว' };
+  } catch (err) {
+    req.session.flash = { ok: false, message: `บันทึกไม่สำเร็จ: ${err.message}` };
+  }
+  res.redirect(back);
+});
+
 app.get('/teacher/export.csv', async (req, res) => {
   if (!req.session.isTeacher) return res.redirect('/teacher');
   const model = await loadModel(res);

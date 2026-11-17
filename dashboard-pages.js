@@ -331,7 +331,8 @@ function renderTeacherDashboard(model, sectionName, flash) {
         <div>
           <h1>Teacher Dashboard</h1>
           <p class="muted">อัปเดต ${esc(new Date(model.loadedAt).toLocaleString('th-TH', { timeZone: 'Asia/Bangkok' }))} ·
-            หน้านักศึกษา: <strong>${model.settings.studentDashboardOn ? 'เปิด' : 'ปิด'}</strong> (แก้ในแท็บ Settings)</p>
+          </p>
+          <div style="margin-top:8px">${studentPageToggle(model, '/teacher?section=' + encodeURIComponent(section || ''))}</div>
         </div>
         <div style="display:flex;gap:8px;flex-wrap:wrap">
           <a class="btn ghost small" href="/teacher?section=${encodeURIComponent(section || '')}&refresh=1">รีเฟรชข้อมูล</a>
@@ -386,6 +387,17 @@ function renderDataError(message) {
     </div>`);
 }
 
+// Open/close button for the whole student page (/my).
+function studentPageToggle(model, back) {
+  const on = model.settings.studentDashboardOn;
+  return `<form method="POST" action="/teacher/student-page" style="display:inline-flex;align-items:center;gap:10px;flex-wrap:wrap">
+      <input type="hidden" name="back" value="${esc(back)}">
+      <input type="hidden" name="value" value="${on ? 'off' : 'on'}">
+      <span>หน้านักศึกษา (/my): <span class="badge ${on ? 'st-present' : 'st-absent'}">${on ? 'เปิดอยู่' : 'ปิดอยู่'}</span></span>
+      <button type="submit" class="btn small${on ? ' ghost' : ''}">${on ? 'ปิดหน้านักศึกษา' : 'เปิดหน้านักศึกษา'}</button>
+    </form>`;
+}
+
 function teacherNav(active) {
   const item = (key, href, label) =>
     `<a class="tab${active === key ? ' active' : ''}" href="${href}">${label}</a>`;
@@ -393,5 +405,5 @@ function teacherNav(active) {
 }
 
 module.exports = {
-  layout, teacherNav, STATUS, renderMyLogin, renderMyReport, renderTeacherLogin, renderTeacherDashboard, renderSectionCsv, renderDataError, esc
+  layout, teacherNav, studentPageToggle, STATUS, renderMyLogin, renderMyReport, renderTeacherLogin, renderTeacherDashboard, renderSectionCsv, renderDataError, esc
 };
