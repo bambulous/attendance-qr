@@ -89,6 +89,29 @@ function renderGradesPage(model, cfg, view, flash) {
     </div>`;
 
   const head1 = defs.map(d => `<th class="num">${esc(d.short)}${d.max ? `<div class="mx">/${d.max}</div>` : ''}</th>`).join('');
+  const bulk = `<div class="card" id="bulk">
+      <h2>วางคะแนนทีละช่อง</h2>
+      <p class="muted" style="margin-bottom:12px">เลือกช่องคะแนน แล้ววางข้อมูลจาก Excel หรือ Google Sheets บรรทัดละ 1 คน
+        (รหัสนักศึกษา และคะแนน มีชื่อคั่นกลางได้ รหัสมีขีดหรือไม่มีก็ได้) กด "ตรวจสอบ" ระบบจะใส่คะแนนลงตารางให้
+        ตรวจแล้วกด "บันทึก" · Pre/Post-test ใช้ ทำ / ไม่ทำ หรือ 1 / 0</p>
+      <div class="bulk-grid">
+        <div>
+          <label for="bulkField">ช่องคะแนน</label>
+          <select id="bulkField">
+            ${defs.map(d => `<option value="${d.key}">${esc(d.label)}${d.max ? ` (เต็ม ${d.max})` : ''}</option>`).join('')}
+          </select>
+          <label for="bulkText">ข้อมูลที่วาง</label>
+          <textarea id="bulkText" rows="8" placeholder="68501010002-0&#9;12&#10;685010100095&#9;14.5&#10;68501010013-7  นางสาวธนพร  10"></textarea>
+          <div style="display:flex;gap:8px;flex-wrap:wrap">
+            <button type="button" class="btn small" id="bulkCheck">ตรวจสอบและใส่ลงตาราง</button>
+            <button type="button" class="btn small" id="bulkSave" disabled>บันทึก</button>
+            <button type="button" class="btn small ghost" id="bulkClear">ล้าง</button>
+          </div>
+        </div>
+        <div id="bulkResult" class="muted">ผลการตรวจสอบจะแสดงที่นี่</div>
+      </div>
+    </div>`;
+
   const table = `<div class="card">
       <div class="toolbar" style="margin-bottom:12px">
         <input type="search" id="gradeSearch" placeholder="ค้นหารหัสหรือชื่อ" style="max-width:280px;margin:0">
@@ -147,6 +170,17 @@ function renderGradesPage(model, cfg, view, flash) {
     th.uni { background:#dbeafe !important; }
     .save-status { font-size:0.88rem; color:#6b7280; }
     .save-status.ok { color:#15803d; } .save-status.err { color:#dc2626; } .save-status.busy { color:#b45309; }
+    .bulk-grid { display:grid; grid-template-columns:minmax(260px,360px) 1fr; gap:20px; }
+    @media (max-width: 800px) { .bulk-grid { grid-template-columns:1fr; } }
+    #bulk textarea { width:100%; padding:10px 12px; border:1.5px solid #e5e7eb; border-radius:10px; font-family:ui-monospace,Consolas,monospace;
+      font-size:0.9rem; margin-bottom:12px; resize:vertical; }
+    #bulk select { margin-bottom:12px; }
+    #bulkResult table { font-size:0.85rem; }
+    #bulkResult .res-scroll { max-height:320px; overflow:auto; }
+    table.grid input.staged, table.grid select.staged { border-color:#7c3aed; background:#f5f3ff; }
+    .tag { display:inline-block; padding:1px 8px; border-radius:999px; font-size:0.78rem; font-weight:600; }
+    .tag.ok { background:#ede9fe; color:#6d28d9; } .tag.same { background:#f3f4f6; color:#6b7280; }
+    .tag.bad { background:#fee2e2; color:#b91c1c; }
     .modal { position:fixed; inset:0; background:rgba(15,23,42,0.45); display:flex; align-items:center; justify-content:center; padding:16px; z-index:20; }
     .modal[hidden] { display:none; }
     .modal-box { background:white; border-radius:16px; padding:24px; max-width:520px; width:100%; max-height:90vh; overflow:auto; }
@@ -230,6 +264,10 @@ function renderGradesPage(model, cfg, view, flash) {
     function setStatus(text, cls) { statusEl.textContent = text; statusEl.className = 'save-status ' + (cls || ''); }
 
     function queue(el) {
+      if (typeof staged !== 'undefined' && staged[el.dataset.id] && staged[el.dataset.id].field === el.dataset.field) {
+        delete staged[el.dataset.id];
+        el.classList.remove('staged');
+      }
       const def = defs.find(d => d.key === el.dataset.field);
       const res = validate(def, el.value);
       el.title = res.error || '';
@@ -327,6 +365,118 @@ function renderGradesPage(model, cfg, view, flash) {
       if (bad) setStatus('วางข้อมูลแล้ว แต่มี ' + bad + ' ช่องไม่ถูกต้อง (ช่องสีแดงยังไม่บันทึก)', 'err');
     });
 
+    // ---- paste one column (ID + score), fill the grid, save on demand ----
+    let staged = {};
+    const bulkResult = document.getElementById('bulkResult');
+    const bulkSave = document.getElementById('bulkSave');
+    const ID_RE = /^\\d{8,13}(-\\d)?$/;
+
+    function cellOf(id, field) {
+      return tbody.querySelector('[data-id="' + CSS.escape(id) + '"][data-field="' + field + '"]');
+    }
+    function clearStaged() {
+      Object.values(staged).forEach(ch => {
+        const el = cellOf(ch.studentId, ch.field);
+        if (!el) return;
+        const v = byId[ch.studentId].rec[ch.field];
+        el.value = blank(v) ? '' : v;
+        el.classList.remove('staged', 'bad');
+      });
+      staged = {};
+      bulkSave.disabled = true; bulkSave.textContent = 'บันทึก';
+    }
+    function shown(def, v) {
+      if (blank(v)) return '<span class="muted">ว่าง</span>';
+      if (def.type === 'completion') return v === 'done' ? 'ทำแล้ว' : 'ไม่ได้ทำ';
+      return esc(v);
+    }
+
+    document.getElementById('bulkCheck').addEventListener('click', () => {
+      clearStaged();
+      const field = document.getElementById('bulkField').value;
+      const def = defs.find(d => d.key === field);
+      const lines = document.getElementById('bulkText').value.replace(/\\r/g, '').split('\\n');
+      const results = [];
+      const seen = {};
+      let skipped = 0;
+      lines.forEach((line, i) => {
+        if (!line.trim()) return;
+        const tokens = line.split(/[\\t,;]+|\\s+/).map(t => t.trim()).filter(Boolean);
+        const idIdx = tokens.findIndex(t => ID_RE.test(t));
+        if (idIdx < 0) { skipped++; return; }
+        const id = tokens[idIdx].replace(/-/g, '');
+        const rest = tokens.slice(idIdx + 1);
+        let raw = null;
+        for (let j = rest.length - 1; j >= 0; j--) {
+          const ok = def.type === 'completion' ? !validate(def, rest[j]).error && rest[j] !== '' : /^-?\\d+(\\.\\d+)?$/.test(rest[j]);
+          if (ok) { raw = rest[j]; break; }
+        }
+        const r = byId[id];
+        const item = { line: i + 1, id, name: r ? r.name : '', raw };
+        if (!r) { item.state = 'bad'; item.msg = 'ไม่พบรหัสในกลุ่มนี้'; }
+        else if (raw == null) { item.state = 'bad'; item.msg = 'ไม่พบคะแนนในบรรทัดนี้'; }
+        else {
+          const v = validate(def, raw);
+          if (v.error) { item.state = 'bad'; item.msg = v.error.replace(def.label + ': ', ''); }
+          else {
+            item.value = v.value;
+            const old = blank(r.rec[field]) ? '' : r.rec[field];
+            item.old = old;
+            item.state = String(old) === String(v.value) ? 'same' : 'ok';
+            if (seen[id]) { seen[id].state = 'bad'; seen[id].msg = 'รหัสซ้ำ ใช้บรรทัดหลังแทน'; }
+            seen[id] = item;
+          }
+        }
+        results.push(item);
+      });
+
+      results.filter(x => x.state === 'ok').forEach(x => {
+        const el = cellOf(x.id, field);
+        if (!el) return;
+        el.value = x.value;
+        el.classList.add('staged'); el.classList.remove('bad', 'dirty', 'saved');
+        staged[x.id] = { studentId: x.id, field, value: String(x.value) };
+      });
+
+      const n = Object.keys(staged).length;
+      const bad = results.filter(x => x.state === 'bad').length;
+      const same = results.filter(x => x.state === 'same').length;
+      const missing = DATA.rows.filter(r => !results.some(x => x.id === r.id)).length;
+      bulkSave.disabled = !n;
+      bulkSave.textContent = n ? 'บันทึก ' + def.label + ' (' + n + ' คน)' : 'บันทึก';
+      const label = { ok: '<span class="tag ok">จะบันทึก</span>', same: '<span class="tag same">เท่าเดิม</span>' };
+      bulkResult.innerHTML =
+        '<p style="margin-bottom:8px"><strong>' + esc(def.label) + '</strong>: จะบันทึก ' + n + ' คน · เท่าเดิม ' + same +
+        ' · มีปัญหา <span style="color:#b91c1c">' + bad + '</span> · ไม่มีในข้อมูลที่วาง ' + missing + ' คน (ไม่เปลี่ยนแปลง)' +
+        (skipped ? ' · ข้าม ' + skipped + ' บรรทัดที่ไม่มีรหัส' : '') + '</p>' +
+        (results.length ? '<div class="res-scroll"><table><thead><tr><th>บรรทัด</th><th>รหัส</th><th>ชื่อ</th><th>เดิม</th><th>ใหม่</th><th>ผล</th></tr></thead><tbody>' +
+          results.map(x => '<tr><td class="num">' + x.line + '</td><td>' + esc(x.id) + '</td><td>' + esc(x.name) + '</td><td>' +
+            (x.old !== undefined ? shown(def, x.old) : '') + '</td><td>' + (x.value !== undefined ? shown(def, x.value) : esc(x.raw || '')) + '</td><td>' +
+            (x.state === 'bad' ? '<span class="tag bad">' + esc(x.msg) + '</span>' : label[x.state]) + '</td></tr>').join('') +
+          '</tbody></table></div>' : '<p>ไม่พบรหัสนักศึกษาในข้อมูลที่วาง</p>');
+      if (n) cellOf(Object.keys(staged)[0], field).scrollIntoView({ block: 'nearest', inline: 'center' });
+    });
+
+    bulkSave.addEventListener('click', () => {
+      Object.values(staged).forEach(ch => {
+        pending[ch.studentId + '|' + ch.field] = ch;
+        const el = cellOf(ch.studentId, ch.field);
+        if (el) { el.classList.remove('staged'); el.classList.add('dirty'); }
+      });
+      staged = {};
+      bulkSave.disabled = true; bulkSave.textContent = 'บันทึก';
+      document.getElementById('bulkText').value = '';
+      bulkResult.innerHTML = 'ส่งข้อมูลไปบันทึกแล้ว ดูสถานะที่มุมขวาบนของตาราง';
+      clearTimeout(timer);
+      flush();
+    });
+
+    document.getElementById('bulkClear').addEventListener('click', () => {
+      clearStaged();
+      document.getElementById('bulkText').value = '';
+      bulkResult.innerHTML = 'ผลการตรวจสอบจะแสดงที่นี่';
+    });
+
     // ---- search ----
     document.getElementById('gradeSearch').addEventListener('input', e => {
       const q = e.target.value.trim().toLowerCase();
@@ -375,12 +525,12 @@ function renderGradesPage(model, cfg, view, flash) {
     document.addEventListener('keydown', e => { if (e.key === 'Escape') modal.hidden = true; });
 
     window.addEventListener('beforeunload', e => {
-      if (Object.keys(pending).length || inFlight) { e.preventDefault(); e.returnValue = ''; }
+      if (Object.keys(pending).length || Object.keys(staged).length || inFlight) { e.preventDefault(); e.returnValue = ''; }
     });
   })();
   </script>`;
 
-  return layout('บันทึกคะแนน', style + header + summary + table + visibility + script, { wide: true });
+  return layout('บันทึกคะแนน', style + header + summary + bulk + table + visibility + script, { wide: true });
 }
 
 // ---------------- Export ----------------
