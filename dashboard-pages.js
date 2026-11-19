@@ -265,11 +265,33 @@ function renderTeacherDashboard(model, sectionName, flash) {
     const avg = rep.reports.filter(r => r.percent != null);
     const avgPct = avg.length ? Math.round(avg.reduce((a, r) => a + r.percent, 0) / avg.length) : null;
 
+    const lateText = se => (se.lateAfter == null ? 'ไม่เช็คสาย' : `สายหลัง ${fmtTime(se.lateAfter)}`) +
+      (se.lateOverridden ? ' <span class="badge st-late" style="font-size:0.72rem">ปรับแล้ว</span>' : '');
+    const stateLabel = { done: 'เรียนแล้ว', ongoing: 'วันนี้', future: 'ยังไม่ถึง' };
+    const lateRows = model.sessions.filter(se => se.section === section).map(se => `
+          <tr${se.lateOverridden ? ' class="overridden"' : ''}>
+            <td class="num">${se.week}</td>
+            <td>${esc(thaiDate(se.date))}${se.note ? ` <span class="muted">(${esc(se.note)})</span>` : ''}</td>
+            <td><span class="muted">${stateLabel[se.state]}</span></td>
+            <td>${se.defaultLateAfter == null ? 'ไม่เช็คสาย' : fmtTime(se.defaultLateAfter)}</td>
+            <td><strong>${se.lateAfter == null ? 'ไม่เช็คสาย' : fmtTime(se.lateAfter)}</strong>${se.lateOverridden ? ' <span class="badge st-late" style="font-size:0.72rem">ปรับแล้ว</span>' : ''}</td>
+            <td>
+              <form method="POST" action="/teacher/late-time" class="late-form">
+                <input type="hidden" name="section" value="${esc(section)}">
+                <input type="hidden" name="date" value="${se.date}">
+                <input type="time" name="lateAfter" value="${se.lateAfter == null ? '' : fmtTime(se.lateAfter)}" step="60">
+                <button type="submit" name="mode" value="set" class="btn small">บันทึก</button>
+                <button type="submit" name="mode" value="none" class="btn small ghost">ไม่เช็คสาย</button>
+                ${se.lateOverridden ? '<button type="submit" name="mode" value="reset" class="btn small ghost">ใช้ค่าปกติ</button>' : ''}
+              </form>
+            </td>
+          </tr>`).join('');
     const pill = (n, cls) => `<span class="pill ${n ? cls : 'zero'}">${n}</span>`;
     const daily = rep.daily.slice().reverse().map(d => `
           <tr>
             <td>${esc(thaiDate(d.session.date))} ${d.session.note ? `<span class="muted">(${esc(d.session.note)})</span>` : ''}
-                ${d.session.state === 'ongoing' ? '<span class="badge st-pending">กำลังเรียน</span>' : ''}</td>
+                ${d.session.state === 'ongoing' ? '<span class="badge st-pending">กำลังเรียน</span>' : ''}
+                <div class="muted" style="font-size:0.82rem">${lateText(d.session)}</div></td>
             <td class="num">${pill(d.counts.present, 'st-present')}</td>
             <td class="num">${pill(d.counts.late, 'st-late')}</td>
             <td class="num">${pill(d.counts.activity, 'st-activity')}</td>
@@ -313,6 +335,23 @@ function renderTeacherDashboard(model, sectionName, flash) {
         <thead><tr><th>วันที่</th><th class="num h-present">มา</th><th class="num h-late">สาย</th><th class="num h-activity">กิจกรรม</th><th class="num h-absent">ขาด</th><th class="num">ทั้งหมด</th></tr></thead>
         <tbody>${daily}</tbody>
       </table></div>` : '<p class="muted">ยังไม่มีคาบเรียน</p>'}
+    </div>
+
+    <div class="card" id="late">
+      <details${flash && flash.late ? ' open' : ''}>
+        <summary style="cursor:pointer"><h2 style="display:inline">กำหนดเวลาสายรายคาบ</h2>
+          <span class="muted"> · คลิกเพื่อเปิด/ปิด</span></summary>
+        <p class="muted" style="margin:10px 0 12px">ปรับเวลาสายของคาบใดก็ได้ ทั้งคาบที่ผ่านแล้วและคาบล่วงหน้า
+          ระบบคำนวณการเข้าเรียนและคะแนนเข้าเรียนใหม่ทันที · สแกนหลังเวลาที่ตั้ง 1 นาทีขึ้นไปนับเป็นสาย
+          (ตั้ง 09:45 → 09:46:00 สาย) · ค่าปกติตั้งในแท็บ Schedule</p>
+        <style>.late-form{display:flex;gap:6px;align-items:center;flex-wrap:wrap}
+          .late-form input{width:auto;margin:0;padding:6px 8px;font-size:0.9rem}
+          tr.overridden td{background:#fffbeb}</style>
+        <div class="scroll"><table>
+          <thead><tr><th class="num">สัปดาห์</th><th>วันที่</th><th>สถานะ</th><th>เวลาสายปกติ</th><th>ที่ใช้อยู่</th><th>ปรับเวลา</th></tr></thead>
+          <tbody>${lateRows}</tbody>
+        </table></div>
+      </details>
     </div>
 
     <div class="card">

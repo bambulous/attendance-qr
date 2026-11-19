@@ -73,6 +73,9 @@ const TAB_DEFAULTS = {
 
 const CANCEL_TYPES = ['หยุด', 'สอบ', 'งดสอน', 'holiday', 'exam', 'cancel'];
 const MAKEUP_TYPES = ['สอนชดเชย', 'ชดเชย', 'makeup', 'extra'];
+// Calendar row that changes the late time of one class. LateAfter '-' or blank = no late check.
+const LATE_TYPE = 'ปรับเวลาสาย';
+const LATE_TYPES = [LATE_TYPE, 'เวลาสาย', 'late'];
 
 const DAY_NAMES = {
   'อาทิตย์': 0, 'อา': 0, 'sun': 0, 'sunday': 0,
@@ -301,8 +304,37 @@ function createDataSource(getSheetsClient, spreadsheetId) {
     cache = null;
   }
 
+  // Sets (value 'HH:MM' or '-') or removes (value null) the late-time override of one class.
+  async function setLateOverride(date, section, value) {
+    const sheets = await getSheetsClient();
+    await ensureTabs(sheets);
+    const res = await sheets.spreadsheets.values.get({
+      spreadsheetId, range: 'Calendar!A:G', valueRenderOption: 'UNFORMATTED_VALUE', dateTimeRenderOption: 'SERIAL_NUMBER'
+    });
+    const rows = res.data.values || [];
+    const target = normSection(section);
+    const idx = rows.findIndex((r, i) => i > 0 && parseDate(r[0]) === date &&
+      LATE_TYPES.includes(str(r[2]).toLowerCase()) && normSection(r[1]) === target);
+    if (value == null) {
+      if (idx > 0) await sheets.spreadsheets.values.clear({ spreadsheetId, range: `Calendar!A${idx + 1}:G${idx + 1}` });
+    } else {
+      const row = [date, section, LATE_TYPE, '', '', value, 'ตั้งจากหน้าเว็บ'];
+      if (idx > 0) {
+        await sheets.spreadsheets.values.update({
+          spreadsheetId, range: `Calendar!A${idx + 1}:G${idx + 1}`, valueInputOption: 'RAW', requestBody: { values: [row] }
+        });
+      } else {
+        await sheets.spreadsheets.values.append({
+          spreadsheetId, range: 'Calendar!A:G', valueInputOption: 'RAW', insertDataOption: 'INSERT_ROWS',
+          requestBody: { values: [row] }
+        });
+      }
+    }
+    cache = null;
+  }
+
   return {
-    load, replaceRoster, updateSetting, appendAdjustment,
+    load, replaceRoster, updateSetting, appendAdjustment, setLateOverride,
     invalidate: () => { cache = null; },
     ensure: async () => ensureTabs(await getSheetsClient())
   };
@@ -435,6 +467,7 @@ function buildModel(raw, nowMs) {
   // Calendar exceptions
   const cancels = [];
   const makeups = [];
+  const lateOverrides = [];
   raw.calendar.slice(1).forEach(r => {
     const date = parseDate(r[0]);
     const type = str(r[2]).toLowerCase();
@@ -445,6 +478,8 @@ function buildModel(raw, nowMs) {
     if (CANCEL_TYPES.includes(type)) cancels.push({ date, section, type: str(r[2]), note });
     else if (MAKEUP_TYPES.includes(type) && section) {
       makeups.push({ date, section, start: parseTime(r[3]), end: parseTime(r[4]), lateAfter: parseTime(r[5]), note, lateSet: str(r[5]) !== '' });
+    } else if (LATE_TYPES.includes(type)) {
+      lateOverrides.push({ date, section, lateAfter: parseTime(r[5]) });
     }
   });
 
@@ -475,6 +510,15 @@ function buildModel(raw, nowMs) {
   });
   sessions.forEach(s => {
     s.id = `${s.date}|${s.section}|${s.start}`;
+    s.defaultLateAfter = s.lateAfter;
+    s.lateOverridden = false;
+    lateOverrides.forEach(o => {
+      if (o.date === s.date && (!o.section || o.section === s.section)) {
+        s.lateAfter = o.lateAfter;
+        s.lateOverridden = true;
+      }
+    });
+    s.week = Math.floor((Date.parse(s.date) - Date.parse(semStart)) / (7 * 86400000)) + 1;
     if (s.date < now.date || (s.date === now.date && now.minutes >= s.end)) s.state = 'done';
     else if (s.date === now.date && now.minutes >= s.start - scanOpenBefore) s.state = 'ongoing';
     else s.state = 'future';

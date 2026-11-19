@@ -559,6 +559,38 @@ app.post('/teacher/fix-scan', async (req, res) => {
   res.redirect('/teacher?section=' + encodeURIComponent(student.section));
 });
 
+// Change the late time of one class (from the "กำหนดเวลาสายรายคาบ" card).
+app.post('/teacher/late-time', async (req, res) => {
+  if (!req.session.isTeacher) return res.redirect('/teacher');
+  const { section, date, mode } = req.body;
+  const back = '/teacher?section=' + encodeURIComponent(section || '') + '#late';
+  let model;
+  try {
+    model = await dataSource.load(true);
+  } catch (err) {
+    req.session.flash = { ok: false, late: true, message: `โหลดข้อมูลไม่สำเร็จ: ${err.message}` };
+    return res.redirect(back);
+  }
+  const session = model.sessions.find(se => se.section === section && se.date === date);
+  const time = String(req.body.lateAfter || '').trim();
+  let error = null;
+  if (!session) error = 'ไม่พบคาบเรียนนี้';
+  else if (!['set', 'none', 'reset'].includes(mode)) error = 'คำสั่งไม่ถูกต้อง';
+  else if (mode === 'set' && !/^([01]\d|2[0-3]):[0-5]\d$/.test(time)) error = 'กรุณากรอกเวลาแบบ ชั่วโมง:นาที เช่น 09:45';
+  if (error) {
+    req.session.flash = { ok: false, late: true, message: error };
+    return res.redirect(back);
+  }
+  try {
+    await dataSource.setLateOverride(date, section, mode === 'set' ? time : mode === 'none' ? '-' : null);
+    const label = mode === 'set' ? `สายหลัง ${time}` : mode === 'none' ? 'ไม่เช็คสาย' : 'ใช้เวลาสายปกติ';
+    req.session.flash = { ok: true, late: true, message: `บันทึกแล้ว: ${section} สัปดาห์ที่ ${session.week} (${date}) ${label}` };
+  } catch (err) {
+    req.session.flash = { ok: false, late: true, message: `บันทึกไม่สำเร็จ: ${err.message}` };
+  }
+  res.redirect(back);
+});
+
 app.post('/teacher/student-page', async (req, res) => {
   if (!req.session.isTeacher) return res.redirect('/teacher');
   const value = req.body.value === 'on' ? 'on' : 'off';
