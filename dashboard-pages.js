@@ -69,6 +69,20 @@ function layout(title, body, opts = {}) {
     .st-activity { background: #dbeafe; color: #1d4ed8; }
     .st-absent { background: #fee2e2; color: #b91c1c; }
     .st-pending { background: #f3f4f6; color: #6b7280; }
+    table.daily { font-size: 1.1rem; }
+    table.daily td, table.daily th { padding: 12px 14px; }
+    table.daily th { font-size: 0.95rem; }
+    table.daily .h-present { color: #15803d; } table.daily .h-late { color: #b45309; }
+    table.daily .h-activity { color: #1d4ed8; } table.daily .h-absent { color: #b91c1c; }
+    .pill { display: inline-block; min-width: 48px; padding: 6px 12px; border-radius: 10px;
+            font-size: 1.25rem; font-weight: 800; text-align: center; }
+    .pill.st-present { background: #16a34a; color: white; }
+    .pill.st-late { background: #f59e0b; color: white; }
+    .pill.st-activity { background: #2563eb; color: white; }
+    .pill.st-absent { background: #dc2626; color: white; }
+    .pill.st-pending { background: #e5e7eb; color: #374151; }
+    .pill.zero { background: #f3f4f6; color: #9ca3af; font-weight: 600; }
+    .cell-time { font-size: 0.72rem; color: #6b7280; margin-top: 2px; font-variant-numeric: tabular-nums; }
     .cell { display: inline-block; width: 26px; height: 26px; line-height: 26px; border-radius: 6px;
             text-align: center; font-weight: 700; font-size: 0.85rem; }
     .tabs { display: flex; flex-wrap: wrap; gap: 8px; margin: 12px 0 4px; }
@@ -251,15 +265,16 @@ function renderTeacherDashboard(model, sectionName, flash) {
     const avg = rep.reports.filter(r => r.percent != null);
     const avgPct = avg.length ? Math.round(avg.reduce((a, r) => a + r.percent, 0) / avg.length) : null;
 
+    const pill = (n, cls) => `<span class="pill ${n ? cls : 'zero'}">${n}</span>`;
     const daily = rep.daily.slice().reverse().map(d => `
           <tr>
             <td>${esc(thaiDate(d.session.date))} ${d.session.note ? `<span class="muted">(${esc(d.session.note)})</span>` : ''}
                 ${d.session.state === 'ongoing' ? '<span class="badge st-pending">กำลังเรียน</span>' : ''}</td>
-            <td class="num">${d.counts.present}</td>
-            <td class="num">${d.counts.late}</td>
-            <td class="num">${d.counts.activity}</td>
-            <td class="num">${d.session.state === 'done' ? d.counts.absent : d.counts.pending}</td>
-            <td class="num">${rep.students.length}</td>
+            <td class="num">${pill(d.counts.present, 'st-present')}</td>
+            <td class="num">${pill(d.counts.late, 'st-late')}</td>
+            <td class="num">${pill(d.counts.activity, 'st-activity')}</td>
+            <td class="num">${d.session.state === 'done' ? pill(d.counts.absent, 'st-absent') : pill(d.counts.pending, 'st-pending')}</td>
+            <td class="num"><strong>${rep.students.length}</strong></td>
           </tr>`).join('');
 
     const head = rep.sessions.map(s => {
@@ -270,7 +285,7 @@ function renderTeacherDashboard(model, sectionName, flash) {
           <tr>
             <td class="sticky-col">${esc(r.student.id)}</td>
             <td>${esc(r.student.name)}</td>
-            ${r.rows.map(x => `<td class="num"><span class="cell ${STATUS[x.status].cls}" title="${esc(thaiDate(x.session.date))} ${STATUS[x.status].label}${x.scan ? ' ' + fmtTime(x.scan.minutes) : ''}${x.note ? ' · ' + esc(x.note) : ''}">${STATUS[x.status].short}</span></td>`).join('')}
+            ${r.rows.map(x => `<td class="num"><span class="cell ${STATUS[x.status].cls}" title="${esc(thaiDate(x.session.date))} ${STATUS[x.status].label}${x.scan ? ' ' + fmtTime(x.scan.minutes) : ''}${x.note ? ' · ' + esc(x.note) : ''}">${STATUS[x.status].short}</span><div class="cell-time">${x.scan ? fmtTime(x.scan.minutes) : (x.note ? 'ปรับ' : '&nbsp;')}</div></td>`).join('')}
             <td class="num">${r.counts.present}</td>
             <td class="num">${r.counts.late}</td>
             <td class="num">${r.counts.activity}</td>
@@ -294,8 +309,8 @@ function renderTeacherDashboard(model, sectionName, flash) {
 
     <div class="card">
       <h2>สรุปรายวัน</h2>
-      ${rep.daily.length ? `<div class="scroll"><table>
-        <thead><tr><th>วันที่</th><th class="num">มา</th><th class="num">สาย</th><th class="num">กิจกรรม</th><th class="num">ขาด</th><th class="num">ทั้งหมด</th></tr></thead>
+      ${rep.daily.length ? `<div class="scroll"><table class="daily">
+        <thead><tr><th>วันที่</th><th class="num h-present">มา</th><th class="num h-late">สาย</th><th class="num h-activity">กิจกรรม</th><th class="num h-absent">ขาด</th><th class="num">ทั้งหมด</th></tr></thead>
         <tbody>${daily}</tbody>
       </table></div>` : '<p class="muted">ยังไม่มีคาบเรียน</p>'}
     </div>
