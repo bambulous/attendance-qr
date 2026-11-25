@@ -307,7 +307,9 @@ function renderTeacherDashboard(model, sectionName, flash) {
           <tr>
             <td class="sticky-col">${esc(r.student.id)}</td>
             <td>${esc(r.student.name)}</td>
-            ${r.rows.map(x => `<td class="num"><span class="cell ${STATUS[x.status].cls}" title="${esc(thaiDate(x.session.date))} ${STATUS[x.status].label}${x.scan ? ' ' + fmtTime(x.scan.minutes) : ''}${x.note ? ' · ' + esc(x.note) : ''}">${STATUS[x.status].short}</span><div class="cell-time">${x.scan ? fmtTime(x.scan.minutes) : (x.note ? 'ปรับ' : '&nbsp;')}</div></td>`).join('')}
+            ${r.rows.map(x => `<td class="num edit-cell" data-date="${x.session.date}" data-id="${esc(r.student.id)}" data-name="${esc(r.student.name)}"
+                data-status="${x.status}" data-adjusted="${x.adjusted ? '1' : ''}" data-note="${esc(x.adjusted ? x.note : '')}"
+                data-scan="${x.scan ? fmtTime(x.scan.minutes) : ''}" data-day="${esc(thaiDate(x.session.date))}"><span class="cell ${STATUS[x.status].cls}${x.adjusted ? ' adj' : ''}" title="${esc(thaiDate(x.session.date))} ${STATUS[x.status].label}${x.scan ? ' ' + fmtTime(x.scan.minutes) : ''}${x.note ? ' · ' + esc(x.note) : ''}">${STATUS[x.status].short}</span><div class="cell-time">${x.scan ? fmtTime(x.scan.minutes) : (x.note ? 'ปรับ' : '&nbsp;')}</div></td>`).join('')}
             <td class="num">${r.counts.present}</td>
             <td class="num">${r.counts.late}</td>
             <td class="num">${r.counts.activity}</td>
@@ -356,7 +358,8 @@ function renderTeacherDashboard(model, sectionName, flash) {
 
     <div class="card">
       <h2>รายบุคคล</h2>
-      ${rep.reports.length ? `<div class="scroll"><table>
+      <p class="muted" style="margin-bottom:10px">คลิกช่องของนักศึกษาเพื่อแก้สถานะ (มา / สาย / กิจกรรม / ขาด) · ช่องที่มีกรอบคือช่องที่อาจารย์แก้แล้ว</p>
+      ${rep.reports.length ? `<div class="scroll"><table id="matrix">
         <thead><tr><th class="sticky-col">รหัส</th><th>ชื่อ-นามสกุล</th>${head}
           <th class="num">มา</th><th class="num">สาย</th><th class="num">กิจกรรม</th><th class="num">ขาด</th><th class="num">ขาดรวม</th><th class="num">%</th></tr></thead>
         <tbody>${matrix}</tbody>
@@ -365,7 +368,69 @@ function renderTeacherDashboard(model, sectionName, flash) {
         ${Object.values(STATUS).map(s => `<span><span class="cell ${s.cls}">${s.short}</span> ${s.label}</span>`).join('')}
         <span>ขาดรวม = ขาด + (สาย ÷ 2 ปัดลง)</span>
       </div>` : '<p class="muted">ไม่มีข้อมูล</p>'}
-    </div>`;
+    </div>
+    <div class="modal" id="adjModal" hidden>
+      <div class="modal-box">
+        <h2 id="adjTitle"></h2>
+        <p class="muted" id="adjInfo" style="margin-bottom:14px"></p>
+        <form method="POST" action="/teacher/attendance-adjust" id="adjForm">
+          <input type="hidden" name="section" value="${esc(section)}">
+          <input type="hidden" name="date" id="adjDate">
+          <input type="hidden" name="studentId" id="adjId">
+          <div class="adj-choices">
+            ${[['มา', 'st-present'], ['สาย', 'st-late'], ['กิจกรรม', 'st-activity'], ['ขาด', 'st-absent']].map(([v, c]) =>
+              `<label class="adj-choice ${c}"><input type="radio" name="status" value="${v}" required> ${v}</label>`).join('')}
+          </div>
+          <label for="adjNote" style="margin-top:12px">หมายเหตุ (ไม่บังคับ)</label>
+          <input type="text" name="note" id="adjNote" maxlength="200" placeholder="เช่น กีฬามหาวิทยาลัย, ติดต่ออาจารย์แล้ว">
+          <div style="display:flex;gap:8px;flex-wrap:wrap">
+            <button type="submit" name="mode" value="set" class="btn">บันทึก</button>
+            <button type="submit" name="mode" value="reset" class="btn ghost" id="adjReset" formnovalidate>กลับไปใช้ผลสแกน</button>
+            <button type="button" class="btn ghost" id="adjCancel">ยกเลิก</button>
+          </div>
+        </form>
+      </div>
+    </div>
+    <style>
+      td.edit-cell { cursor: pointer; }
+      td.edit-cell:hover { background: #f1f5f9; }
+      .cell.adj { outline: 2px solid #1e3a5f; outline-offset: 1px; }
+      .modal { position: fixed; inset: 0; background: rgba(15,23,42,0.45); display: flex; align-items: center;
+               justify-content: center; padding: 16px; z-index: 20; }
+      .modal[hidden] { display: none; }
+      .modal-box { background: white; border-radius: 16px; padding: 24px; max-width: 440px; width: 100%; }
+      .adj-choices { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
+      .adj-choice { display: flex; align-items: center; justify-content: center; gap: 6px; padding: 12px 6px; border-radius: 10px;
+                    cursor: pointer; margin: 0; font-weight: 700; border: 2px solid transparent; }
+      .adj-choice input { width: auto; margin: 0; }
+      #adjReset[hidden] { display: none; }
+      .adj-choice:has(input:checked) { border-color: #1e3a5f; }
+    </style>
+    <script>
+    (function () {
+      const modal = document.getElementById('adjModal');
+      const table = document.getElementById('matrix');
+      if (!table) return;
+      const labels = { present: 'มา', late: 'สาย', activity: 'กิจกรรม', absent: 'ขาด', pending: 'รอสแกน' };
+      table.addEventListener('click', e => {
+        const td = e.target.closest('td.edit-cell');
+        if (!td) return;
+        const d = td.dataset;
+        document.getElementById('adjTitle').textContent = d.name;
+        document.getElementById('adjInfo').textContent = 'รหัส ' + d.id + ' · ' + d.day + ' · ตอนนี้: ' + labels[d.status] +
+          (d.scan ? ' (สแกน ' + d.scan + ')' : ' (ไม่มีการสแกน)') + (d.adjusted ? ' · แก้โดยอาจารย์' : '');
+        document.getElementById('adjDate').value = d.date;
+        document.getElementById('adjId').value = d.id;
+        document.getElementById('adjNote').value = d.note || '';
+        document.querySelectorAll('#adjForm input[name=status]').forEach(i => { i.checked = i.value === labels[d.status]; });
+        document.getElementById('adjReset').hidden = !d.adjusted;
+        modal.hidden = false;
+      });
+      document.getElementById('adjCancel').addEventListener('click', () => { modal.hidden = true; });
+      modal.addEventListener('click', e => { if (e.target === modal) modal.hidden = true; });
+      document.addEventListener('keydown', e => { if (e.key === 'Escape') modal.hidden = true; });
+    })();
+    </script>`;
   }
 
   const fixForm = e => {

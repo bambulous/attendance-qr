@@ -288,6 +288,37 @@ function createDataSource(getSheetsClient, spreadsheetId) {
   }
 
   // Adds one Adjustment row. sourceRow links it to the Sheet1 scan it fixes.
+  // Sets (status label) or removes (status null) the teacher's status for one student in one class.
+  async function setAdjustment(date, section, studentId, statusLabel, note) {
+    const sheets = await getSheetsClient();
+    await ensureTabs(sheets);
+    const res = await sheets.spreadsheets.values.get({
+      spreadsheetId, range: 'Adjustment!A:F', valueRenderOption: 'UNFORMATTED_VALUE', dateTimeRenderOption: 'SERIAL_NUMBER'
+    });
+    const rows = res.data.values || [];
+    const matches = [];
+    rows.forEach((r, i) => { if (i > 0 && parseDate(r[0]) === date && normId(r[2]) === studentId) matches.push(i); });
+    const keep = statusLabel ? matches.pop() : undefined;
+    for (const i of matches) {
+      await sheets.spreadsheets.values.clear({ spreadsheetId, range: `Adjustment!A${i + 1}:F${i + 1}` });
+    }
+    if (statusLabel) {
+      const sourceRow = keep !== undefined ? (rows[keep][5] == null ? '' : rows[keep][5]) : '';
+      const row = [date, section, studentId, statusLabel, note || 'แก้จากหน้าเว็บ', sourceRow];
+      if (keep !== undefined) {
+        await sheets.spreadsheets.values.update({
+          spreadsheetId, range: `Adjustment!A${keep + 1}:F${keep + 1}`, valueInputOption: 'RAW', requestBody: { values: [row] }
+        });
+      } else {
+        await sheets.spreadsheets.values.append({
+          spreadsheetId, range: 'Adjustment!A:F', valueInputOption: 'RAW', insertDataOption: 'INSERT_ROWS',
+          requestBody: { values: [row] }
+        });
+      }
+    }
+    cache = null;
+  }
+
   async function appendAdjustment(row) {
     const sheets = await getSheetsClient();
     await ensureTabs(sheets);
@@ -334,7 +365,7 @@ function createDataSource(getSheetsClient, spreadsheetId) {
   }
 
   return {
-    load, replaceRoster, updateSetting, appendAdjustment, setLateOverride,
+    load, replaceRoster, updateSetting, appendAdjustment, setAdjustment, setLateOverride,
     invalidate: () => { cache = null; },
     ensure: async () => ensureTabs(await getSheetsClient())
   };
@@ -630,7 +661,7 @@ function buildModel(raw, nowMs) {
     const key = `${session.id}|${studentId}`;
     const scan = firstScan[key];
     const adj = adjust[key];
-    if (adj) return { status: adj.status, scan, note: adj.note || 'ปรับโดยอาจารย์' };
+    if (adj) return { status: adj.status, scan, note: adj.note || 'ปรับโดยอาจารย์', adjusted: true };
     if (scan) {
       const late = session.lateAfter != null && scan.minutes > session.lateAfter;
       return { status: late ? 'late' : 'present', scan };

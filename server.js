@@ -523,6 +523,42 @@ app.get('/teacher/grades/export.:format(xlsx|csv)', async (req, res) => {
   res.send(gradePages.gradesCsv(data.view, data.cfg));
 });
 
+// Set or remove the teacher's status for one student in one class (matrix cell).
+app.post('/teacher/attendance-adjust', async (req, res) => {
+  if (!req.session.isTeacher) return res.redirect('/teacher');
+  const { section, date, mode } = req.body;
+  const back = '/teacher?section=' + encodeURIComponent(section || '') + '#matrix';
+  let model;
+  try {
+    model = await dataSource.load(true);
+  } catch (err) {
+    req.session.flash = { ok: false, message: `โหลดข้อมูลไม่สำเร็จ: ${err.message}` };
+    return res.redirect(back);
+  }
+  const student = model.studentById[normId(req.body.studentId)];
+  const status = ['มา', 'สาย', 'กิจกรรม', 'ขาด'].includes(req.body.status) ? req.body.status : null;
+  const note = String(req.body.note || '').trim().slice(0, 200);
+  let error = null;
+  if (!student || student.section !== section) error = 'ไม่พบนักศึกษาในกลุ่มนี้';
+  else if (!model.sessions.some(s => s.section === section && s.date === date)) error = 'ไม่พบคาบเรียนวันนี้';
+  else if (mode === 'set' && !status) error = 'กรุณาเลือกสถานะ';
+  else if (!['set', 'reset'].includes(mode)) error = 'คำสั่งไม่ถูกต้อง';
+  if (error) {
+    req.session.flash = { ok: false, message: error };
+    return res.redirect(back);
+  }
+  try {
+    await dataSource.setAdjustment(date, section, student.id, mode === 'set' ? status : null, note);
+    req.session.flash = {
+      ok: true,
+      message: mode === 'set' ? `บันทึกแล้ว: ${student.name} วันที่ ${date} = ${status}` : `${student.name} วันที่ ${date} กลับไปใช้ผลสแกนแล้ว`
+    };
+  } catch (err) {
+    req.session.flash = { ok: false, message: `บันทึกไม่สำเร็จ: ${err.message}` };
+  }
+  res.redirect(back);
+});
+
 // Fix a scan from the review list by adding an Adjustment row for the chosen student.
 app.post('/teacher/fix-scan', async (req, res) => {
   if (!req.session.isTeacher) return res.redirect('/teacher');
