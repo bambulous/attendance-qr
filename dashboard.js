@@ -319,6 +319,15 @@ function createDataSource(getSheetsClient, spreadsheetId) {
     cache = null;
   }
 
+  // Marks one Sheet1 row as Ignored (column F). Rows are never deleted, so row numbers stay stable.
+  async function ignoreScan(row) {
+    const sheets = await getSheetsClient();
+    await sheets.spreadsheets.values.update({
+      spreadsheetId, range: `${LOG_SHEET}!F${row}`, valueInputOption: 'RAW', requestBody: { values: [['Ignored']] }
+    });
+    cache = null;
+  }
+
   async function appendAdjustment(row) {
     const sheets = await getSheetsClient();
     await ensureTabs(sheets);
@@ -365,7 +374,7 @@ function createDataSource(getSheetsClient, spreadsheetId) {
   }
 
   return {
-    load, replaceRoster, updateSetting, appendAdjustment, setAdjustment, setLateOverride,
+    load, replaceRoster, updateSetting, appendAdjustment, setAdjustment, ignoreScan, setLateOverride,
     invalidate: () => { cache = null; },
     ensure: async () => ensureTabs(await getSheetsClient())
   };
@@ -571,12 +580,15 @@ function buildModel(raw, nowMs) {
   // Check-ins
   const errors = [];
   const firstScan = {}; // `${sessionId}|${studentId}` -> scan
+  let ignoredCount = 0;
   raw.log.forEach((r, i) => {
     const iso = str(r[7]);
     const ms = /^\d{4}-\d{2}-\d{2}T/.test(iso) ? Date.parse(iso) : NaN;
     if (!Number.isFinite(ms)) return; // header or legacy rows without timestamp
     const t = bkk(ms);
     if (t.date < semStart) return;
+    // Scans the teacher removed from the review list (not related to the class).
+    if (str(r[5]).toLowerCase() === 'ignored') { ignoredCount++; return; }
     const id = normId(r[3]);
     const scan = {
       row: i + 1, date: t.date, minutes: t.minutes, seconds: t.seconds,
@@ -700,7 +712,7 @@ function buildModel(raw, nowMs) {
   }
 
   return {
-    sections, students, sessions, errors: openErrors, allErrors: errors, resolvedCount: errors.length - openErrors.length,
+    sections, students, sessions, errors: openErrors, allErrors: errors, resolvedCount: errors.length - openErrors.length, ignoredCount,
     studentById, defaultStatus,
     settings: { semStart, semEnd, scanOpenBefore, studentDashboardOn, raw: settings },
     studentReport, sectionReport, statusFor, loadedAt: nowMs

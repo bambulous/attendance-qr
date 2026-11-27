@@ -454,7 +454,12 @@ function renderTeacherDashboard(model, sectionName, flash) {
             <td>${esc(thaiDate(e.date))} ${fmtTime(e.minutes)}</td>
             <td>${esc(e.id)}</td>
             <td>${esc(e.name)}</td>
-            <td>${fixForm(e)}</td>
+            <td><div style="display:flex;gap:6px;align-items:center">${fixForm(e)}
+              <form method="POST" action="/teacher/ignore-scan" onsubmit="return confirm('ลบรายการของ ${esc(String(e.name || e.id).replace(/['"\\]/g, ''))} ออกจากรายการรอตรวจสอบ?\\nระบบจะไม่นับการสแกนนี้')">
+                <input type="hidden" name="row" value="${e.row}">
+                <input type="hidden" name="back" value="${esc(section || '')}">
+                <button type="submit" class="btn small del-btn" title="นักศึกษาไม่เกี่ยวข้องกับรายวิชานี้">ลบ</button>
+              </form></div></td>
             <td>${esc(e.reason)}</td>
             <td>${esc(e.section)}</td>
             <td>${esc(e.email)}</td>
@@ -486,7 +491,9 @@ function renderTeacherDashboard(model, sectionName, flash) {
       <p class="muted" style="margin-bottom:12px">การสแกนที่ระบบนับให้ไม่ได้ เลือกนักศึกษาที่ถูกต้องแล้วกดบันทึก
         (ระบบเลือกให้จากชื่อ อีเมล หรือรหัสที่ใกล้เคียง และตั้งสถานะตามเวลาสแกน) ·
         ถ้านักศึกษาไม่อยู่ในรายชื่อจริง ให้นำเข้ารายชื่อใหม่แทน
-        ${model.resolvedCount ? ` · แก้ไขแล้ว ${model.resolvedCount} รายการ (ดูในแท็บ Adjustment)` : ''}</p>
+        ${model.resolvedCount ? ` · แก้ไขแล้ว ${model.resolvedCount} รายการ (ดูในแท็บ Adjustment)` : ''}
+        ${model.ignoredCount ? ` · ลบแล้ว ${model.ignoredCount} รายการ (กู้คืนได้โดยเปลี่ยน Ignored เป็น Present ในคอลัมน์ Status ของ Sheet1)` : ''}</p>
+      <style>.del-btn{background:#fee2e2;color:#b91c1c}.del-btn:hover{background:#fecaca}</style>
       <style>.fix-form{display:flex;gap:6px;align-items:center}.fix-form select{width:auto;max-width:260px;margin:0;padding:6px 8px;font-size:0.85rem}</style>
       ${model.errors.length ? `<div class="scroll"><table>
         <thead><tr><th>วันเวลา</th><th>รหัส</th><th>ชื่อ</th><th>แก้ไขเป็น</th><th>สาเหตุ</th><th>กลุ่มเรียน</th><th>อีเมล</th><th class="num">แถวใน Sheet</th></tr></thead>

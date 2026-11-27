@@ -559,6 +559,25 @@ app.post('/teacher/attendance-adjust', async (req, res) => {
   res.redirect(back);
 });
 
+// Remove a scan from the review list (student not related to the class). The row is marked Ignored.
+app.post('/teacher/ignore-scan', async (req, res) => {
+  if (!req.session.isTeacher) return res.redirect('/teacher');
+  const back = '/teacher?section=' + encodeURIComponent(req.body.back || '');
+  try {
+    const model = await dataSource.load(true);
+    const scan = model.errors.find(e => e.row === Number(req.body.row));
+    if (!scan) {
+      req.session.flash = { ok: false, message: 'รายการนี้ไม่อยู่ในรายการรอตรวจสอบแล้ว' };
+      return res.redirect(back);
+    }
+    await dataSource.ignoreScan(scan.row);
+    req.session.flash = { ok: true, message: `ลบแล้ว: ${scan.name || scan.id} (แถว ${scan.row} ใน Sheet1 ถูกทำเครื่องหมาย Ignored)` };
+  } catch (err) {
+    req.session.flash = { ok: false, message: `ลบไม่สำเร็จ: ${err.message}` };
+  }
+  res.redirect(back);
+});
+
 // Fix a scan from the review list by adding an Adjustment row for the chosen student.
 app.post('/teacher/fix-scan', async (req, res) => {
   if (!req.session.isTeacher) return res.redirect('/teacher');
